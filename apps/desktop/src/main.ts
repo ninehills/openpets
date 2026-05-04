@@ -2,8 +2,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, screen, session } from "electron";
-import type { Rectangle } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, session, shell, Tray } from "electron";
+import type { MenuItemConstructorOptions, Rectangle } from "electron";
 import {
   createInitialPetRuntimeState,
   createLifecycleLeaseState,
@@ -40,6 +40,7 @@ let activePet: LoadedCodexPet | null = null;
 let config: OpenPetsConfig = {};
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 let ipcServerHandle: DesktopIpcServerHandle | null = null;
+let tray: Tray | null = null;
 let debugMode = isDebugEnabled(process.argv);
 let dragState: { startCursor: { x: number; y: number }; startBounds: Rectangle } | null = null;
 let rendererReady = false;
@@ -54,11 +55,14 @@ app.on("second-instance", (_event, argv) => {
 });
 
 app.whenReady().then(async () => {
+  hideDockIcon();
+  Menu.setApplicationMenu(null);
   installSecurityHeaders();
   debugLog("app ready", { argv: process.argv, debugMode });
   config = await loadConfig();
   await applyArgv(process.argv);
   await startLocalIpcServer();
+  createTray();
   await createPetWindow();
   publishState();
 });
@@ -167,6 +171,105 @@ function showPetWindow(reason: string) {
   debugLog("show window", { reason, visible: mainWindow.isVisible(), bounds: mainWindow.getBounds() });
 }
 
+function hideDockIcon() {
+  if (process.platform === "darwin") {
+    app.dock?.hide();
+  }
+}
+
+function createTray() {
+  if (tray) return;
+  tray = new Tray(getTrayIcon());
+  tray.setToolTip("OpenPets");
+  tray.on("double-click", () => {
+    void handleWindowAction(config.hidden || !mainWindow?.isVisible() ? "show" : "hide");
+  });
+  updateTrayMenu();
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(Menu.buildFromTemplate(createTrayMenuTemplate()));
+}
+
+function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
+  const scale = normalizeScale(config.scale);
+  const activePetLabel = activePet?.id ? `Pet: ${activePet.id}` : "Pet: Loading…";
+  return [
+    { label: "OpenPets", enabled: false },
+    { type: "separator" },
+    {
+      label: config.hidden ? "Show Pet" : "Hide Pet",
+      click: () => void handleWindowAction(config.hidden ? "show" : "hide"),
+    },
+    {
+      label: "Sleep",
+      click: () => void handleWindowAction("sleep"),
+    },
+    { type: "separator" },
+    {
+      label: activePetLabel,
+      enabled: false,
+    },
+    {
+      label: "Choose Pet…",
+      click: () => void choosePetDirectory(),
+    },
+    {
+      label: "Use Default Pet",
+      click: () => void useDefaultPet(),
+    },
+    {
+      label: "Scale",
+      submenu: [0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => ({
+        label: `${Math.round(value * 100)}%`,
+        type: "radio" as const,
+        checked: Math.abs(scale - value) < 0.001,
+        click: () => void setPetScale(value),
+      })),
+    },
+    { type: "separator" },
+    {
+      label: "Settings",
+      submenu: [
+        {
+          label: "Open Config File",
+          click: () => void openConfigFile(),
+        },
+        {
+          label: "Reveal Config Folder",
+          click: () => void revealConfigFolder(),
+        },
+        {
+          label: `Active leases: ${getActiveLeaseCount(lifecycleState)}`,
+          enabled: false,
+        },
+        {
+          label: `Mode: ${lifecycleState.managed ? "Managed" : "Manual"}`,
+          enabled: false,
+        },
+      ],
+    },
+    { type: "separator" },
+    {
+      label: "Quit OpenPets",
+      click: () => void handleWindowAction("quit"),
+    },
+  ];
+}
+
+function getTrayIcon() {
+  const candidates = [
+    join(__dirname, "../../../assets/tray-icon.png"),
+    join(process.resourcesPath ?? "", "assets", "tray-icon.png"),
+  ];
+  for (const candidate of candidates) {
+    const image = nativeImage.createFromPath(candidate);
+    if (!image.isEmpty()) return image.resize({ width: 18, height: 18, quality: "best" });
+  }
+  return nativeImage.createEmpty();
+}
+
 function installSecurityHeaders() {
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -253,6 +356,7 @@ function handleLease(params: LeaseParams) {
     error.code = "invalid-params";
     throw error;
   }
+  updateTrayMenu();
   return result.result;
 }
 
@@ -270,6 +374,7 @@ function publishState() {
     activePet: activePet ? { ...activePet, spritesheetUrl: pathToFileURL(activePet.spritesheetPath).href } : null,
     scale: normalizeScale(config.scale),
   });
+  updateTrayMenu();
 }
 
 async function handleSecondInstance(argv: string[]) {
@@ -327,11 +432,13 @@ async function handleWindowAction(action: OpenPetsWindowAction) {
       config = { ...config, hidden: false };
       await saveConfig(config);
       showPetWindow("show-action");
+      updateTrayMenu();
       break;
     case "hide":
       config = { ...config, hidden: true };
       await saveConfig(config);
       mainWindow?.hide();
+      updateTrayMenu();
       break;
     case "sleep":
       applyEvent(createManualEvent("sleeping", { source: "desktop" }));
@@ -340,6 +447,70 @@ async function handleWindowAction(action: OpenPetsWindowAction) {
       app.exit(0);
       break;
   }
+}
+
+async function choosePetDirectory() {
+  const result = await dialog.showOpenDialog({
+    title: "Choose OpenPets pet folder",
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || !result.filePaths[0]) return;
+
+  const loaded = await loadCodexPetDirectory(result.filePaths[0]);
+  if (!loaded.ok) {
+    await dialog.showMessageBox({
+      type: "error",
+      title: "Invalid pet folder",
+      message: "That folder is not a valid OpenPets/Codex pet.",
+      detail: loaded.issues.map((item) => item.message).join("\n"),
+    });
+    return;
+  }
+
+  activePet = loaded.pet;
+  config = { ...config, petPath: activePet.directory };
+  await saveConfig(config);
+  publishState();
+}
+
+async function useDefaultPet() {
+  const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
+  if (!loaded.ok) return;
+  activePet = loaded.pet;
+  const { petPath: _petPath, ...nextConfig } = config;
+  config = nextConfig;
+  await saveConfig(config);
+  publishState();
+}
+
+async function setPetScale(scale: number) {
+  config = { ...config, scale: normalizeScale(scale) };
+  await saveConfig(config);
+  resizeWindowForCurrentScale();
+  publishState();
+}
+
+async function openConfigFile() {
+  await mkdir(dirname(getOpenPetsConfigPath()), { recursive: true });
+  await saveConfig(config);
+  await reportShellOpenFailure("Open config file", shell.openPath(getOpenPetsConfigPath()));
+}
+
+async function revealConfigFolder() {
+  const configDir = dirname(getOpenPetsConfigPath());
+  await mkdir(configDir, { recursive: true });
+  await reportShellOpenFailure("Reveal config folder", shell.openPath(configDir));
+}
+
+async function reportShellOpenFailure(title: string, operation: Promise<string>) {
+  const error = await operation;
+  if (!error) return;
+  await dialog.showMessageBox({
+    type: "error",
+    title,
+    message: "OpenPets could not open that path.",
+    detail: error,
+  });
 }
 
 function isWindowAction(action: unknown): action is "show" | "hide" | "sleep" | "quit" {
