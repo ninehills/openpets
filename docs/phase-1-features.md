@@ -64,11 +64,6 @@ openpets show
 openpets hide
 openpets sleep
 openpets quit
-openpets hook claude-code
-openpets integrate claude-code --print
-openpets integrate claude-code --install
-openpets integrate opencode --print
-openpets integrate opencode --install
 ```
 
 `openpets start --pet <path>` is required in phase 1. It should accept a local Codex/Petdex pet directory, store it as the current pet in config, launch the overlay, and start the local event server. Zip paths are not supported in phase 1.
@@ -117,13 +112,13 @@ openpets event success --message "All tests passed"
 ## Claude Code integration
 
 - Claude Code hooks bridge.
-- `openpets hook claude-code` reads hook JSON from stdin.
+- Dedicated `claude-pets hook` reads hook JSON from stdin.
 - Defensive parsing of Claude Code hook payloads.
 - Metadata-only event forwarding to OpenPets.
 - No-op behavior when OpenPets is not running.
 - Integration snippet generation:
-  - `openpets integrate claude-code --print`
-  - `openpets integrate claude-code --install`
+  - `bunx claude-pets print`
+  - `bunx claude-pets install`
 
 Expected state mapping:
 
@@ -142,8 +137,8 @@ failure/error          → error
 - OpenCode plugin bridge.
 - Self-contained plugin template with no required OpenPets package dependency.
 - Integration commands:
-  - `openpets integrate opencode --print`
-  - `openpets integrate opencode --install`
+  - `bunx opencode-pets print-plugin`
+  - `bunx opencode-pets install`
 - Plugin listens to core OpenCode signals such as:
   - `tool.execute.before`
   - `tool.execute.after`

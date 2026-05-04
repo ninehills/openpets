@@ -215,6 +215,8 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       app: "openpets",
       ok: true,
       version: app.getVersion(),
+      protocolVersion: 1,
+      capabilities: ["event-v1"],
       ready: Boolean(mainWindow),
       activePet: activePet?.id ?? null,
       debug: debugMode,

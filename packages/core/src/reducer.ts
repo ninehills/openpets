@@ -1,10 +1,10 @@
-import type { OpenPetsEvent } from "./event";
+import type { OpenPetsEvent } from "./event.js";
 import {
   getStatePriority,
   isLongRunningState,
   isTemporaryState,
   type OpenPetsState,
-} from "./states";
+} from "./states.js";
 
 export const reducerTimings = {
   duplicateDebounceMs: 250,

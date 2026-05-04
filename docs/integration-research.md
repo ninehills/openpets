@@ -113,7 +113,7 @@ Example hook concept:
         "hooks": [
           {
             "type": "command",
-            "command": "openpets hook claude-code"
+            "command": "claude-pets hook"
           }
         ]
       }
@@ -145,7 +145,7 @@ Example hook concept:
 Better than one command per event: provide a hook bridge command that reads the hook JSON from stdin and maps it:
 
 ```bash
-openpets hook claude-code
+claude-pets hook
 ```
 
 The bridge should parse:
@@ -327,10 +327,10 @@ Keep this mapping in one small adapter/table so switching event names or payload
 
 ### Plugin bridge concept
 
-OpenPets should ship an install command:
+OpenCode support should live in the dedicated `opencode-pets` package:
 
 ```bash
-openpets integrate opencode
+opencode-pets install
 ```
 
 It can create or print a plugin file like:
@@ -338,11 +338,11 @@ It can create or print a plugin file like:
 ```ts
 import type { Plugin } from "@opencode-ai/plugin"
 
-const OPENPETS_URL = process.env.OPENPETS_URL ?? "http://127.0.0.1:4738"
+const OPENPETS_BASE_URL = process.env.OPENPETS_BASE_URL ?? "http://127.0.0.1:4738"
 
 async function send(event: unknown) {
   try {
-    await fetch(`${OPENPETS_URL}/event`, {
+    await fetch(`${OPENPETS_BASE_URL}/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(event),

@@ -197,18 +197,15 @@ openpets show
 openpets hide
 openpets sleep
 openpets quit
-openpets hook claude-code
-openpets integrate claude-code
-openpets integrate opencode
 ```
 
-Integration install behavior should default to safe output:
+Integration install behavior lives in dedicated packages and should default to safe output:
 
 ```bash
-openpets integrate opencode --print
-openpets integrate opencode --install
-openpets integrate claude-code --print
-openpets integrate claude-code --install
+opencode-pets print-plugin
+opencode-pets install
+claude-pets print
+claude-pets install
 ```
 
 Default behavior should be `--print` or equivalent unless the user explicitly requests installation.
@@ -316,7 +313,7 @@ Phase 1 should include both Claude Code and OpenCode support, but keep each brid
 
 ### OpenCode
 
-Ship an `openpets integrate opencode` command that installs or prints a plugin.
+Ship a dedicated `opencode-pets` package that installs or prints a plugin.
 
 The plugin should:
 
@@ -354,11 +351,11 @@ file.edited                    → editing
 
 ### Claude Code
 
-Ship an `openpets integrate claude-code` command that installs or prints settings snippets.
+Ship a dedicated `claude-pets` package that installs or prints settings snippets.
 
 The bridge should:
 
-- expose `openpets hook claude-code`
+- expose `claude-pets hook`
 - read hook JSON from stdin
 - map hook events to OpenPets events
 - send events to the local event server
@@ -426,8 +423,8 @@ After the foundation, split work across agents:
    - `openpets hide`
    - `openpets sleep`
    - `openpets quit`
-   - `openpets integrate ... --print/--install`
-   - `openpets hook claude-code`
+   - `claude-pets print/install/hook`
+   - `opencode-pets print-plugin/install`
 
 4. **OpenCode integration lane**
    - plugin template

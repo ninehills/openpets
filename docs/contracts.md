@@ -484,11 +484,6 @@ openpets show
 openpets hide
 openpets sleep
 openpets quit
-openpets hook claude-code
-openpets integrate claude-code --print
-openpets integrate claude-code --install
-openpets integrate opencode --print
-openpets integrate opencode --install
 ```
 
 ### `openpets start`
@@ -552,9 +547,9 @@ openpets event testing
 bun test && openpets event success || openpets event error
 ```
 
-### Bridge silent mode
+### Integration silent mode
 
-Bridge commands must no-op silently when OpenPets is unavailable and should exit `0` unless debug mode is enabled.
+Dedicated integration hook/plugin commands must no-op silently when OpenPets is unavailable and should exit `0` unless debug mode is enabled.
 
 Debug mode may emit diagnostics, but OpenPets unavailability should still not break Claude Code or OpenCode host flows.
 
@@ -588,7 +583,7 @@ If OpenPets is unavailable:
 
 - `show` may launch/reuse the app and clear hidden state.
 - `hide`, `sleep`, and `quit` should fail clearly for manual CLI use.
-- Bridge silent-mode behavior does not apply to manual recovery commands.
+- Integration silent-mode behavior does not apply to manual recovery commands.
 
 ## 12. Config/storage contract
 
@@ -621,12 +616,12 @@ Rules:
 - Test paths with spaces.
 - No database in phase 1.
 
-## 13. Claude Code bridge contract
+## 13. Claude Code integration contract
 
 Command:
 
 ```bash
-openpets hook claude-code
+claude-pets hook
 ```
 
 Behavior:
@@ -659,8 +654,8 @@ StopFailure / hook failure payload       → error
 Integration commands:
 
 ```bash
-openpets integrate claude-code --print
-openpets integrate claude-code --install
+claude-pets print
+claude-pets install
 ```
 
 Rules:
@@ -673,13 +668,13 @@ Rules:
 - User-global Claude install is deferred unless an explicit `--global` flag is added later.
 - Generated commands must quote paths with spaces.
 
-## 14. OpenCode bridge contract
+## 14. OpenCode integration contract
 
 Integration commands:
 
 ```bash
-openpets integrate opencode --print
-openpets integrate opencode --install
+opencode-pets print-plugin
+opencode-pets install
 ```
 
 OpenCode plugin must be self-contained and must not depend on OpenPets workspace packages. Additional dependencies should be avoided in phase 1.

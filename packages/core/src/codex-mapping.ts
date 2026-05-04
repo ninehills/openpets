@@ -1,4 +1,4 @@
-import type { OpenPetsState } from "./states";
+import type { OpenPetsState } from "./states.js";
 
 export type CodexStateId =
   | "idle"

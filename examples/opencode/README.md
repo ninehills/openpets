@@ -1,15 +1,17 @@
 # OpenCode example
 
+OpenCode integration now lives in the dedicated `opencode-pets` package.
+
 Print the project-local OpenCode plugin:
 
 ```bash
-openpets integrate opencode --print
+bunx opencode-pets print-plugin
 ```
 
 Install the project-local OpenCode plugin:
 
 ```bash
-openpets integrate opencode --install
+bunx opencode-pets install
 ```
 
-Phase 1 installs to `.opencode/plugins/openpets.ts` and backs up an existing plugin file.
+It installs to `.opencode/plugins/openpets.ts` and backs up an existing plugin file.

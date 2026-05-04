@@ -1,4 +1,4 @@
-import { isOpenPetsState, type OpenPetsState } from "./states";
+import { isOpenPetsState, type OpenPetsState } from "./states.js";
 
 export const MAX_EVENT_BODY_BYTES = 16 * 1024;
 export const MAX_TYPE_LENGTH = 80;

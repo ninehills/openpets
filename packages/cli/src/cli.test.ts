@@ -24,6 +24,25 @@ async function runCli(args: string[], cwd: string = CLI_DIR) {
 }
 
 describe("CLI black-box tests", () => {
+  it("points integration users to dedicated packages", async () => {
+    const result = await runCli(["help"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("bunx claude-pets install");
+    expect(result.stdout).toContain("bunx opencode-pets install");
+    expect(result.stdout).not.toContain("openpets hook claude-code");
+  });
+
+  it("does not expose legacy integration commands", async () => {
+    const hookResult = await runCli(["hook", "claude-code"]);
+    const integrateResult = await runCli(["integrate", "claude-code"]);
+
+    expect(hookResult.exitCode).toBe(1);
+    expect(hookResult.stderr).toContain("Unknown command: hook");
+    expect(integrateResult.exitCode).toBe(1);
+    expect(integrateResult.stderr).toContain("Unknown command: integrate");
+  });
+
   describe("start command with invalid pet paths", () => {
     it("returns non-zero exit code for non-existent pet path with clear stderr", async () => {
       const result = await runCli(["start", "--pet", "./does-not-exist"]);

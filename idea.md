@@ -113,8 +113,8 @@ POST http://localhost:4738/event
 
 Phase 1 should include first-class bridges for Claude Code and OpenCode:
 
-- Claude Code: hooks bridge via `openpets hook claude-code`
-- OpenCode: plugin bridge via `openpets integrate opencode`
+- Claude Code: hooks bridge via dedicated `claude-pets`
+- OpenCode: plugin bridge via dedicated `opencode-pets`
 
 These integrations should emit the same generic OpenPets events as the CLI.
 

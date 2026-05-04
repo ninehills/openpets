@@ -1,22 +1,26 @@
 {
-  "name": "@openpets/core",
+  "name": "@openpets/client",
   "version": "0.0.0",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./config": {
-      "types": "./dist/config.d.ts",
-      "import": "./dist/config.js"
     }
   },
   "files": ["dist"],
+  "peerDependencies": {
+    "@openpets/core": "0.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@openpets/core": {
+      "optional": true
+    }
+  },
   "scripts": {
     "build": "bunx tsc -p tsconfig.json",
-    "test": "bun test",
-    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
   },
   "devDependencies": {
     "@types/bun": "latest",

@@ -255,7 +255,7 @@ Optional token can be added later if simple, but do not let token plumbing derai
 Implement:
 
 ```bash
-openpets hook claude-code
+claude-pets hook
 ```
 
 Behavior:
@@ -283,8 +283,8 @@ Timeout target:
 Use generated settings snippets via:
 
 ```bash
-openpets integrate claude-code --print
-openpets integrate claude-code --install
+claude-pets print
+claude-pets install
 ```
 
 Default should be `--print`. `--install` must back up and merge safely.
@@ -314,8 +314,8 @@ Generate a self-contained OpenCode plugin.
 Commands:
 
 ```bash
-openpets integrate opencode --print
-openpets integrate opencode --install
+opencode-pets print-plugin
+opencode-pets install
 ```
 
 Default should be `--print`. `--install` must not overwrite silently.
