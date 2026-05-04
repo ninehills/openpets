@@ -158,7 +158,7 @@ openpets/
     cli/                  # openpets command
     core/                 # event types, state machine, mapping
     pet-format-codex/     # Codex/Petdex loader
-    integrations/         # Claude/OpenCode bridge helpers for phase 1
+    # Claude/OpenCode bridge helpers live in packages/cli/src/integrations for phase 1
   examples/
     shell/
     test-runner/
@@ -193,6 +193,10 @@ openpets event thinking --source claude-code --message "Thinking..."
 openpets event testing --source bun --message "Running tests"
 openpets event error --message "3 tests failed"
 openpets event success --message "All tests passed"
+openpets show
+openpets hide
+openpets sleep
+openpets quit
 openpets hook claude-code
 openpets integrate claude-code
 openpets integrate opencode
@@ -295,7 +299,7 @@ working     → running
 editing     → running
 running     → running
 testing     → waiting
-waiting     → waiting or waving
+waiting     → waiting
 waving      → waving
 success     → jumping
 error       → failed
@@ -319,7 +323,9 @@ The plugin should:
 - listen to `session.status`
 - listen to `tool.execute.before`
 - listen to `tool.execute.after`
-- optionally listen to `message.part.updated`, `file.edited`, `permission.asked`, and `session.error` where stable/useful
+- listen to `permission.asked`
+- listen to `session.error`
+- optionally listen to `message.part.updated` and `file.edited` where stable/useful
 - send events to `http://127.0.0.1:4738/event`
 - never throw if OpenPets is not running
 - send only metadata by default
@@ -335,6 +341,8 @@ tool.execute.before Bash  → running or testing
 tool.execute.before edit  → editing
 tool.execute.after error  → error
 tool.execute.after ok     → success briefly
+permission.asked          → waving
+session.error             → error
 ```
 
 Optional mapping:
@@ -342,8 +350,6 @@ Optional mapping:
 ```txt
 message.part.updated reasoning → thinking
 file.edited                    → editing
-permission.asked               → waving or waiting
-session.error                  → error
 ```
 
 ### Claude Code
@@ -416,6 +422,10 @@ After the foundation, split work across agents:
 3. **CLI lane**
    - `openpets start`
    - `openpets event <state>`
+   - `openpets show`
+   - `openpets hide`
+   - `openpets sleep`
+   - `openpets quit`
    - `openpets integrate ... --print/--install`
    - `openpets hook claude-code`
 
@@ -525,6 +535,22 @@ openpets event editing --message "Editing files"
 openpets event testing --message "Running tests"
 openpets event error --message "Tests failed"
 openpets event success --message "All tests passed"
+```
+
+`openpets event <state>` supports:
+
+```txt
+--source <source>
+--message <message>
+--tool <tool>
+--type <type>
+```
+
+Defaults:
+
+```txt
+source: cli
+type: state.<state>
 ```
 
 Then show OpenCode/Claude Code integration making the same thing happen automatically.

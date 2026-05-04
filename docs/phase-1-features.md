@@ -43,7 +43,7 @@ working     → running
 editing     → running
 running     → running
 testing     → waiting
-waiting     → waiting or waving
+waiting     → waiting
 waving      → waving
 success     → jumping
 error       → failed
@@ -60,6 +60,10 @@ Phase 1 CLI commands:
 openpets start
 openpets start --pet ./sample-pet
 openpets event <state>
+openpets show
+openpets hide
+openpets sleep
+openpets quit
 openpets hook claude-code
 openpets integrate claude-code --print
 openpets integrate claude-code --install
@@ -71,6 +75,8 @@ openpets integrate opencode --install
 
 If `--pet` is omitted, OpenPets should load the last configured pet or fall back to a bundled sample pet.
 
+`openpets show`, `hide`, `sleep`, and `quit` are required recovery controls so users can recover from hidden/frameless/non-focusable overlay states without editing config manually.
+
 Example events:
 
 ```bash
@@ -79,6 +85,8 @@ openpets event testing --source bun --message "Running tests"
 openpets event error --message "Tests failed"
 openpets event success --message "All tests passed"
 ```
+
+`openpets event <state>` supports `--source`, `--message`, `--tool`, and `--type`. Defaults are `source: cli` and `type: state.<state>`.
 
 ## Event/state system
 
@@ -99,8 +107,8 @@ openpets event success --message "All tests passed"
   - `sleeping`
 - Deterministic state reducer.
 - Timeout/debounce behavior:
-  - `success`, `error`, and `celebrating` are temporary states.
-  - `waiting` is sticky until another meaningful event arrives.
+  - `success`, `error`, `warning`, and `celebrating` are temporary states.
+  - `waiting` is sticky until an accepted non-`waiting` event arrives.
   - `waving` is a public state for startup, greeting, attention, and permission/input request moments.
   - `thinking`, `working`, `editing`, and `testing` are long-running states.
   - Duplicate same-state events are ignored briefly.
@@ -143,11 +151,11 @@ failure/error          → error
   - `session.status`
   - `tool.execute.before`
   - `tool.execute.after`
+  - `permission.asked`
+  - `session.error`
 - Optional useful OpenCode signals:
   - `message.part.updated`
   - `file.edited`
-  - `permission.asked`
-  - `session.error`
 - OpenCode signal mapping should be isolated in one small adapter/table so it is easy to update if OpenCode changes event names or payload shapes.
 - Metadata-only event forwarding to OpenPets.
 - No-op behavior when OpenPets is not running.
@@ -159,7 +167,7 @@ session busy/reasoning → thinking
 session idle           → idle
 tool running           → working
 file edited/patch      → editing
-permission asked       → waving or waiting
+permission asked       → waving
 tool/session success   → success
 tool/session error     → error
 ```

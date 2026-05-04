@@ -1,0 +1,21 @@
+{
+  "name": "openpets",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "test": "bun test packages/core/src packages/pet-format-codex/src packages/cli/src",
+    "typecheck": "bun run typecheck:core && bun run typecheck:pet-format-codex && bun run typecheck:cli && bun run typecheck:desktop",
+    "build": "cd apps/desktop && bun run build",
+    "typecheck:core": "bunx tsc -p packages/core/tsconfig.json --noEmit",
+    "typecheck:pet-format-codex": "bunx tsc -p packages/pet-format-codex/tsconfig.json --noEmit",
+    "typecheck:cli": "bunx tsc -p packages/cli/tsconfig.json --noEmit",
+    "typecheck:desktop": "bunx tsc -p apps/desktop/tsconfig.json --noEmit",
+    "dev:desktop": "cd apps/desktop && bun run dev",
+    "dev:cli": "cd packages/cli && bun run dev"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
+}

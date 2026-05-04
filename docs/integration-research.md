@@ -301,7 +301,7 @@ Important message part types:
 | `tool.execute.after` completed | `success` briefly |
 | `tool.execute.after` error | `error` |
 | `file.edited` | `editing` |
-| `permission.asked` | `waving` or `waiting` |
+| `permission.asked` | `waving` |
 | `session.error` | `error` |
 
 Minimum required OpenCode signals for phase 1:
@@ -310,6 +310,8 @@ Minimum required OpenCode signals for phase 1:
 session.status
 tool.execute.before
 tool.execute.after
+permission.asked
+session.error
 ```
 
 Optional useful signals:
@@ -458,7 +460,7 @@ working     → running
 editing     → running
 running     → running
 testing     → waiting
-waiting     → waiting or waving
+waiting     → waiting
 waving      → waving
 success     → jumping
 error       → failed

@@ -1,0 +1,29 @@
+{
+  "name": "@openpets/desktop",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "bun run build:main && bun run build:preload && bunx vite --host 127.0.0.1",
+    "start": "bun run build && bunx electron dist/main.js",
+    "build": "bun run build:main && bun run build:preload && bunx vite build",
+    "build:main": "bun build src/main.ts --target=node --external electron --outdir dist",
+    "build:preload": "bun build src/preload.ts --target=node --external electron --outdir dist",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@openpets/core": "workspace:*",
+    "@openpets/pet-format-codex": "workspace:*",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^39.2.7",
+    "vite": "^7.2.7",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

@@ -103,6 +103,7 @@ POST http://localhost:4738/event
 ```json
 {
   "type": "agent.thinking",
+  "state": "thinking",
   "source": "opencode",
   "message": "Planning changes"
 }
