@@ -17,7 +17,7 @@ afterEach(async () => {
 
 describe("@openpets/client IPC", () => {
   it("gets health from OpenPets over IPC", async () => {
-    const endpoint = await startIpcServer({ health: () => validHealth(), event: () => ({}), window: () => ({}) });
+    const endpoint = await startIpcServer({ health: () => validHealth(), event: () => ({}), window: () => ({}), lease: () => ({}) });
     const client = createOpenPetsClient({ endpoint });
 
     await expect(client.getHealth()).resolves.toMatchObject({ app: "openpets", protocolVersion: 2, transport: "ipc", ready: true });
@@ -126,6 +126,36 @@ describe("@openpets/client IPC", () => {
     await expect(client.windowAction("hide")).resolves.toEqual({ ok: true, action: "hide" });
   });
 
+  it("supports lease acquire, heartbeat, and release", async () => {
+    const bodies: unknown[] = [];
+    const endpoint = await startIpcServer({
+      health: () => validHealth(),
+      event: () => ({}),
+      window: () => ({}),
+      lease: (params) => {
+        bodies.push(params);
+        return { action: params.action, activeLeases: params.action === "release" ? 0 : 1, managed: false, leaseActive: params.action !== "release", changed: true };
+      },
+    });
+    const client = createOpenPetsClient({ endpoint });
+
+    expect(await client.leaseAcquire({ id: "mcp:1", client: "mcp", label: "Claude" })).toEqual({ action: "acquire", activeLeases: 1, managed: false, leaseActive: true, changed: true });
+    await expect(client.leaseHeartbeat({ id: "mcp:1", ttlMs: 60_000 })).resolves.toEqual({ action: "heartbeat", activeLeases: 1, managed: false, leaseActive: true, changed: true });
+    await expect(client.leaseRelease("mcp:1")).resolves.toEqual({ action: "release", activeLeases: 0, managed: false, leaseActive: false, changed: true });
+    expect(bodies).toEqual([
+      { action: "acquire", id: "mcp:1", client: "mcp", label: "Claude" },
+      { action: "heartbeat", id: "mcp:1", ttlMs: 60_000 },
+      { action: "release", id: "mcp:1" },
+    ]);
+  });
+
+  it("rejects invalid lease responses", async () => {
+    const endpoint = await startIpcServer({ health: () => validHealth(), event: () => ({}), window: () => ({}), lease: () => ({ action: "acquire" }) });
+    const client = createOpenPetsClient({ endpoint });
+
+    await expect(client.leaseAcquire({ id: "mcp:1", client: "mcp" })).rejects.toMatchObject({ code: "invalid-response" });
+  });
+
   it("isRunning reflects health availability", async () => {
     const endpoint = await startIpcServer({ health: () => validHealth(), event: () => ({}), window: () => ({}) });
     const client = createOpenPetsClient({ endpoint });
@@ -162,9 +192,11 @@ function validHealth() {
     version: "0.0.0",
     protocolVersion: 2,
     transport: "ipc",
-    capabilities: ["event-v2", "window-v1", "speech-v1"],
+    capabilities: ["event-v2", "window-v1", "speech-v1", "lease-v1"],
     ready: true,
     activePet: "slayer",
+    activeLeases: 0,
+    managed: false,
   };
 }
 

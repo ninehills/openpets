@@ -1,5 +1,5 @@
 import { createConnection } from "node:net";
-import { isOpenPetsState, type OpenPetsEvent, type OpenPetsState } from "@openpets/core";
+import { isOpenPetsState, type LeaseParams, type LeaseResult, type OpenPetsEvent, type OpenPetsLeaseClient, type OpenPetsState } from "@openpets/core";
 import {
   getDefaultOpenPetsIpcEndpoint,
   isOpenPetsWindowAction,
@@ -27,12 +27,23 @@ export type OpenPetsSafeResult =
   | { ok: true; state?: OpenPetsState }
   | { ok: false; error: OpenPetsClientError };
 
+export type OpenPetsLeaseInput = {
+  id: string;
+  client: OpenPetsLeaseClient;
+  label?: string;
+  ttlMs?: number;
+  autoClose?: boolean;
+};
+
 export type OpenPetsClient = {
   getHealth(options?: OpenPetsClientOptions): Promise<OpenPetsHealth>;
   isRunning(options?: OpenPetsClientOptions): Promise<boolean>;
   sendEvent(event: OpenPetsEventInput, options?: OpenPetsClientOptions): Promise<{ ok: true; state: OpenPetsState }>;
   safeSendEvent(event: OpenPetsEventInput, options?: OpenPetsClientOptions): Promise<OpenPetsSafeResult>;
   windowAction(action: OpenPetsWindowAction, options?: OpenPetsClientOptions): Promise<{ ok: true; action: OpenPetsWindowAction }>;
+  leaseAcquire(input: OpenPetsLeaseInput, options?: OpenPetsClientOptions): Promise<LeaseResult>;
+  leaseHeartbeat(input: { id: string; ttlMs?: number }, options?: OpenPetsClientOptions): Promise<LeaseResult>;
+  leaseRelease(id: string, options?: OpenPetsClientOptions): Promise<LeaseResult>;
 };
 
 type ResolvedOptions = {
@@ -83,6 +94,12 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     return validateWindowActionResult(unwrapIpcResult(response));
   }
 
+  async function leaseRequestForClient(params: LeaseParams, overrides: OpenPetsClientOptions = {}) {
+    const merged = mergedOptions(overrides);
+    const response = await requestIpc(merged.endpoint, { id: createRequestId("lease"), method: "lease", params }, merged.timeoutMs ?? 1000);
+    return validateLeaseResult(unwrapIpcResult(response));
+  }
+
   return {
     getHealth: getHealthForClient,
     async isRunning(overrides) {
@@ -96,6 +113,15 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     sendEvent: sendEventForClient,
     safeSendEvent: safeSendEventForClient,
     windowAction: windowActionForClient,
+    leaseAcquire(input, overrides) {
+      return leaseRequestForClient({ action: "acquire", ...input }, overrides);
+    },
+    leaseHeartbeat(input, overrides) {
+      return leaseRequestForClient({ action: "heartbeat", ...input }, overrides);
+    },
+    leaseRelease(id, overrides) {
+      return leaseRequestForClient({ action: "release", id }, overrides);
+    },
   };
 }
 
@@ -121,6 +147,18 @@ export function windowAction(action: OpenPetsWindowAction, options?: OpenPetsCli
   return defaultClient.windowAction(action, options);
 }
 
+export function leaseAcquire(input: OpenPetsLeaseInput, options?: OpenPetsClientOptions) {
+  return defaultClient.leaseAcquire(input, options);
+}
+
+export function leaseHeartbeat(input: { id: string; ttlMs?: number }, options?: OpenPetsClientOptions) {
+  return defaultClient.leaseHeartbeat(input, options);
+}
+
+export function leaseRelease(id: string, options?: OpenPetsClientOptions) {
+  return defaultClient.leaseRelease(id, options);
+}
+
 async function fetchHealth(endpoint: string, timeoutMs: number): Promise<OpenPetsHealth> {
   const response = await requestIpc(endpoint, { id: createRequestId("health"), method: "health" }, timeoutMs);
   return validateIpcHealth(unwrapIpcResult(response));
@@ -131,7 +169,7 @@ async function sendEventIpc(endpoint: string, event: OpenPetsEvent, timeoutMs: n
   return validateEventResult(unwrapIpcResult(response));
 }
 
-function requestIpc(endpoint: string, request: { id: string; method: "health" | "event" | "window"; params?: unknown }, timeoutMs: number): Promise<IpcResponse> {
+function requestIpc(endpoint: string, request: { id: string; method: "health" | "event" | "window" | "lease"; params?: unknown }, timeoutMs: number): Promise<IpcResponse> {
   return new Promise((resolve, reject) => {
     let settled = false;
     let buffer = Buffer.alloc(0);
@@ -215,9 +253,11 @@ function validateIpcHealth(input: unknown): OpenPetsHealthV2 {
     version: record.version,
     protocolVersion: OPENPETS_IPC_PROTOCOL_VERSION,
     transport: "ipc",
-    capabilities: Array.isArray(record.capabilities) ? record.capabilities.filter((item) => item === "event-v2" || item === "window-v1" || item === "speech-v1") : [],
+    capabilities: Array.isArray(record.capabilities) ? record.capabilities.filter((item) => item === "event-v2" || item === "window-v1" || item === "speech-v1" || item === "lease-v1") : [],
     ready: record.ready,
     activePet: typeof record.activePet === "string" ? record.activePet : null,
+    activeLeases: typeof record.activeLeases === "number" && Number.isFinite(record.activeLeases) ? record.activeLeases : 0,
+    managed: typeof record.managed === "boolean" ? record.managed : false,
     ...(typeof record.debug === "boolean" ? { debug: record.debug } : {}),
     ...(record.window !== undefined ? { window: record.window } : {}),
   };
@@ -235,6 +275,21 @@ function validateWindowActionResult(input: unknown): { ok: true; action: OpenPet
   const record = input as Record<string, unknown>;
   if (!isOpenPetsWindowAction(record.action)) throw new OpenPetsClientError("invalid-response", "OpenPets window response is missing action");
   return { ok: true, action: record.action };
+}
+
+function validateLeaseResult(input: unknown): LeaseResult {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new OpenPetsClientError("invalid-response", "OpenPets lease response must be an object");
+  const record = input as Record<string, unknown>;
+  if (record.action !== "acquire" && record.action !== "heartbeat" && record.action !== "release") throw new OpenPetsClientError("invalid-response", "OpenPets lease response is missing action");
+  if (typeof record.activeLeases !== "number" || !Number.isInteger(record.activeLeases) || record.activeLeases < 0) throw new OpenPetsClientError("invalid-response", "OpenPets lease response is missing activeLeases");
+  if (typeof record.managed !== "boolean" || typeof record.leaseActive !== "boolean" || typeof record.changed !== "boolean") throw new OpenPetsClientError("invalid-response", "OpenPets lease response is missing required fields");
+  return {
+    action: record.action,
+    activeLeases: record.activeLeases,
+    managed: record.managed,
+    leaseActive: record.leaseActive,
+    changed: record.changed,
+  };
 }
 
 function remainingMs(deadline: number) {

@@ -84,9 +84,10 @@ describe("IPC endpoint helpers", () => {
     tempDirs.push(dir);
     const endpoint = join(dir, "openpets.sock");
     const server = createServer((socket) => handleIpcSocket(socket, {
-      health: () => ({ app: "openpets", ok: true, version: "0.0.0", protocolVersion: 2, transport: "ipc", capabilities: ["event-v2"], ready: true, activePet: null }),
+      health: () => ({ app: "openpets", ok: true, version: "0.0.0", protocolVersion: 2, transport: "ipc", capabilities: ["event-v2", "lease-v1"], ready: true, activePet: null, activeLeases: 0, managed: false }),
       event: (event) => ({ state: event.state }),
       window: (action) => ({ action }),
+      lease: (params) => ({ action: params.action }),
     }));
     servers.push(server);
     await new Promise<void>((resolve) => server.listen(endpoint, resolve));
@@ -130,6 +131,7 @@ describe("IPC framing and dispatcher", () => {
     health: () => ({ app: "openpets", ok: true }),
     event: (event) => ({ state: event.state }),
     window: (action) => ({ action }),
+    lease: (params) => ({ action: params.action, id: params.id }),
   };
 
   test("serializes newline-delimited JSON requests", () => {
@@ -152,6 +154,20 @@ describe("IPC framing and dispatcher", () => {
   test("validates window actions", async () => {
     await expect(dispatchIpcRequest({ id: "4", method: "window", params: { action: "hide" } }, handlers)).resolves.toEqual({ id: "4", ok: true, result: { action: "hide" } });
     await expect(dispatchIpcRequest({ id: "5", method: "window", params: { action: "explode" } }, handlers)).resolves.toMatchObject({ id: "5", ok: false, error: { code: "invalid-params" } });
+  });
+
+  test("validates lease params before dispatch", async () => {
+    await expect(dispatchIpcRequest({ id: "6", method: "lease", params: { action: "acquire", id: " mcp:1 ", client: "mcp" } }, handlers)).resolves.toEqual({ id: "6", ok: true, result: { action: "acquire", id: "mcp:1" } });
+    await expect(dispatchIpcRequest({ id: "7", method: "lease", params: { action: "acquire", id: "mcp:1", client: "bad" } }, handlers)).resolves.toMatchObject({ id: "7", ok: false, error: { code: "invalid-params" } });
+  });
+
+  test("returns unknown-method when lease handler is unavailable", async () => {
+    const noLeaseHandlers: IpcDispatcherHandlers = {
+      health: () => ({}),
+      event: () => ({}),
+      window: () => ({}),
+    };
+    await expect(dispatchIpcRequest({ id: "8", method: "lease", params: { action: "release", id: "mcp:1" } }, noLeaseHandlers)).resolves.toMatchObject({ id: "8", ok: false, error: { code: "unknown-method" } });
   });
 });
 

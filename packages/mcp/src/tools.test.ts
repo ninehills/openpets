@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { OpenPetsState } from "@openpets/core";
 import type { OpenPetsHealthV2 } from "@openpets/core/ipc";
 import { OpenPetsClientError } from "@openpets/client";
-import { openPetsHealthTool, openPetsSayTool, openPetsSetStateTool, openPetsStartTool, type OpenPetsToolClient } from "./tools.js";
+import { createMcpLeaseManager, openPetsHealthTool, openPetsReleaseTool, openPetsSayTool, openPetsSetStateTool, openPetsStartTool, type OpenPetsToolClient } from "./tools.js";
 import { createSpeechLimiter } from "./safety.js";
 
 describe("OpenPets MCP tools", () => {
@@ -26,7 +26,7 @@ describe("OpenPets MCP tools", () => {
   test("start returns existing running desktop without launching", async () => {
     let launched = false;
     const result = await openPetsStartTool(fakeClient({ health: validHealth() }), async () => { launched = true; });
-    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}" )).toEqual({ running: true, ready: true, started: false, activePet: "slayer" });
+    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}" )).toEqual({ running: true, ready: true, started: false, activePet: "slayer", lease: true });
     expect(launched).toBe(false);
   });
 
@@ -40,13 +40,64 @@ describe("OpenPets MCP tools", () => {
       },
     });
     const result = await openPetsStartTool(client, async () => undefined);
-    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}" )).toEqual({ running: true, ready: true, started: true, activePet: "slayer" });
+    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}" )).toEqual({ running: true, ready: true, started: true, activePet: "slayer", lease: true });
+  });
+
+  test("start waits for IPC health and acquires lease before renderer ready", async () => {
+    let calls = 0;
+    const leaseActions: string[] = [];
+    const client = fakeClient({
+      getHealth: async () => {
+        calls += 1;
+        if (calls === 1) throw new OpenPetsClientError("not-running", "missing");
+        return validHealth({ ready: calls >= 4 });
+      },
+      leaseActions,
+    });
+    const result = await openPetsStartTool(client, async () => undefined, createMcpLeaseManager(client, { leaseId: "mcp:test", heartbeatIntervalMs: 60_000 }));
+    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}" )).toMatchObject({ running: true, ready: true, started: true, lease: true });
+    expect(leaseActions[0]).toBe("acquire");
   });
 
   test("start failures are generic", async () => {
     const result = await openPetsStartTool(fakeClient({ healthError: new OpenPetsClientError("not-running", "/tmp/socket") }), async () => { throw new Error("/secret/path"); });
     expect(result.isError).toBe(true);
     expect(result.content[0]?.type === "text" ? result.content[0].text : "").toBe("OpenPets desktop could not be started.");
+  });
+
+  test("release releases only this MCP lease", async () => {
+    const leaseActions: string[] = [];
+    const client = fakeClient({ leaseActions });
+    const manager = createMcpLeaseManager(client, { leaseId: "mcp:test", heartbeatIntervalMs: 60_000 });
+    await manager.acquire();
+    const result = await openPetsReleaseTool(manager);
+
+    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}" )).toEqual({ released: true, running: true, activeLeases: 0 });
+    expect(leaseActions).toEqual(["acquire", "release"]);
+  });
+
+  test("release ignores an in-flight heartbeat result", async () => {
+    let resolveHeartbeat: ((value: { action: "heartbeat"; activeLeases: number; managed: boolean; leaseActive: boolean; changed: boolean }) => void) | undefined;
+    const client: OpenPetsToolClient = {
+      async getHealth() { return validHealth(); },
+      async sendEvent(event) { return { ok: true as const, state: event.state as OpenPetsState }; },
+      async leaseAcquire() { return { action: "acquire", activeLeases: 1, managed: false, leaseActive: true, changed: true }; },
+      async leaseHeartbeat() {
+        return new Promise((resolve) => {
+          resolveHeartbeat = resolve;
+        });
+      },
+      async leaseRelease() { return { action: "release", activeLeases: 0, managed: false, leaseActive: false, changed: true }; },
+    };
+    const manager = createMcpLeaseManager(client, { leaseId: "mcp:test", heartbeatIntervalMs: 60_000 });
+
+    await manager.acquire();
+    const heartbeat = manager.heartbeat();
+    await manager.release();
+    resolveHeartbeat?.({ action: "heartbeat", activeLeases: 1, managed: false, leaseActive: true, changed: true });
+    await heartbeat;
+
+    expect(manager.leaseAcquired).toBe(false);
   });
 
   test("set_state sends MCP state event", async () => {
@@ -87,7 +138,7 @@ describe("OpenPets MCP tools", () => {
   });
 });
 
-function fakeClient(options: { health?: OpenPetsHealthV2; healthError?: Error; events?: unknown[]; getHealth?: OpenPetsToolClient["getHealth"] }): OpenPetsToolClient {
+function fakeClient(options: { health?: OpenPetsHealthV2; healthError?: Error; events?: unknown[]; leaseActions?: string[]; getHealth?: OpenPetsToolClient["getHealth"] }): OpenPetsToolClient {
   return {
     async getHealth() {
       if (options.getHealth) return options.getHealth();
@@ -98,18 +149,33 @@ function fakeClient(options: { health?: OpenPetsHealthV2; healthError?: Error; e
       options.events?.push(event);
       return { ok: true as const, state: event.state as OpenPetsState };
     },
+    async leaseAcquire(input) {
+      options.leaseActions?.push("acquire");
+      return { action: "acquire", activeLeases: 1, managed: false, leaseActive: true, changed: true };
+    },
+    async leaseHeartbeat() {
+      options.leaseActions?.push("heartbeat");
+      return { action: "heartbeat", activeLeases: 1, managed: false, leaseActive: true, changed: true };
+    },
+    async leaseRelease() {
+      options.leaseActions?.push("release");
+      return { action: "release", activeLeases: 0, managed: false, leaseActive: false, changed: true };
+    },
   };
 }
 
-function validHealth(): OpenPetsHealthV2 {
+function validHealth(overrides: Partial<OpenPetsHealthV2> = {}): OpenPetsHealthV2 {
   return {
     app: "openpets",
     ok: true,
     version: "0.0.0",
     protocolVersion: 2,
     transport: "ipc",
-    capabilities: ["event-v2", "window-v1"],
-    ready: true,
+    capabilities: ["event-v2", "window-v1", "lease-v1"],
+    ready: overrides.ready ?? true,
     activePet: "slayer",
+    activeLeases: 0,
+    managed: false,
+    ...overrides,
   };
 }

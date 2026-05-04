@@ -9,12 +9,13 @@ import {
   handleIpcSocket,
   inspectIpcEndpoint,
 } from "@openpets/core/ipc";
-import type { OpenPetsEvent } from "@openpets/core";
+import type { LeaseParams, OpenPetsEvent } from "@openpets/core";
 
 export type DesktopIpcHandlerContext = {
   getHealth(): OpenPetsHealthV2;
   applyEvent(event: OpenPetsEvent): void;
   handleWindowAction(action: OpenPetsWindowAction): void | Promise<void>;
+  handleLease(params: LeaseParams): unknown;
 };
 
 export type DesktopIpcServerHandle = {
@@ -33,6 +34,7 @@ export function createDesktopIpcHandlers(context: DesktopIpcHandlerContext): Ipc
       await context.handleWindowAction(action);
       return { action };
     },
+    lease: (params) => context.handleLease(params),
   };
 }
 

@@ -6,9 +6,13 @@ import { app, BrowserWindow, ipcMain, screen, session } from "electron";
 import type { Rectangle } from "electron";
 import {
   createInitialPetRuntimeState,
+  createLifecycleLeaseState,
   createManualEvent,
+  applyLeaseAction,
+  getActiveLeaseCount,
   reducePetEvent,
   tickPetState,
+  type LeaseParams,
   type OpenPetsEvent,
 } from "@openpets/core";
 import type { OpenPetsHealthV2, OpenPetsWindowAction } from "@openpets/core/ipc";
@@ -31,6 +35,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 let runtimeState = createInitialPetRuntimeState();
+let lifecycleState = createLifecycleLeaseState({ managed: false });
 let activePet: LoadedCodexPet | null = null;
 let config: OpenPetsConfig = {};
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -203,6 +208,7 @@ async function startLocalIpcServer() {
     getHealth: getIpcHealth,
     applyEvent,
     handleWindowAction,
+    handleLease,
   });
   try {
     ipcServerHandle = await startDesktopIpcServer({
@@ -224,9 +230,11 @@ function getIpcHealth(): OpenPetsHealthV2 {
     version: app.getVersion(),
     protocolVersion: 2,
     transport: "ipc",
-    capabilities: ["event-v2", "window-v1", "speech-v1"],
+    capabilities: ["event-v2", "window-v1", "speech-v1", "lease-v1"],
     ready: Boolean(mainWindow && rendererReady && activePet),
     activePet: activePet?.id ?? null,
+    activeLeases: getActiveLeaseCount(lifecycleState),
+    managed: lifecycleState.managed,
     debug: debugMode,
     window: mainWindow
       ? {
@@ -236,6 +244,16 @@ function getIpcHealth(): OpenPetsHealthV2 {
         }
       : null,
   };
+}
+
+function handleLease(params: LeaseParams) {
+  const result = applyLeaseAction(lifecycleState, params);
+  if (!result.ok) {
+    const error = new Error(result.error) as Error & { code: "invalid-params" };
+    error.code = "invalid-params";
+    throw error;
+  }
+  return result.result;
 }
 
 function applyEvent(event: OpenPetsEvent) {

@@ -2,6 +2,7 @@ import { mkdir, lstat, stat, chmod } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { createConnection, type Socket } from "node:net";
 import { validateOpenPetsEvent, type OpenPetsEvent } from "./event.js";
+import { validateLeaseParams, type LeaseParams } from "./lifecycle.js";
 
 export const OPENPETS_IPC_PROTOCOL_VERSION = 2;
 export const MAX_IPC_FRAME_BYTES = 16 * 1024;
@@ -9,7 +10,7 @@ export const MAX_IPC_ID_LENGTH = 80;
 export const DEFAULT_IPC_TIMEOUT_MS = 1000;
 export const SAFE_IPC_TIMEOUT_MS = 400;
 
-export type OpenPetsIpcMethod = "health" | "event" | "window";
+export type OpenPetsIpcMethod = "health" | "event" | "window" | "lease";
 export type OpenPetsWindowAction = "show" | "hide" | "sleep" | "quit";
 
 export type IpcRequest = {
@@ -37,9 +38,11 @@ export type OpenPetsHealthV2 = {
   version: string;
   protocolVersion: 2;
   transport: "ipc";
-  capabilities: Array<"event-v2" | "window-v1" | "speech-v1">;
+  capabilities: Array<"event-v2" | "window-v1" | "speech-v1" | "lease-v1">;
   ready: boolean;
   activePet: string | null;
+  activeLeases: number;
+  managed: boolean;
   debug?: boolean;
   window?: unknown;
 };
@@ -47,12 +50,14 @@ export type OpenPetsHealthV2 = {
 export type ValidatedIpcRequest =
   | { id: string; method: "health"; params: undefined }
   | { id: string; method: "event"; params: OpenPetsEvent }
-  | { id: string; method: "window"; params: { action: OpenPetsWindowAction } };
+  | { id: string; method: "window"; params: { action: OpenPetsWindowAction } }
+  | { id: string; method: "lease"; params: LeaseParams };
 
 export type IpcDispatcherHandlers = {
   health(): unknown | Promise<unknown>;
   event(event: OpenPetsEvent): unknown | Promise<unknown>;
   window(action: OpenPetsWindowAction): unknown | Promise<unknown>;
+  lease?(params: LeaseParams): unknown | Promise<unknown>;
 };
 
 export type IpcEndpointOptions = {
@@ -258,7 +263,7 @@ export function validateIpcRequest(input: unknown): { ok: true; request: Validat
     return { ok: false, id, code: "invalid-request", message: `id must be a non-empty string <= ${MAX_IPC_ID_LENGTH} chars` };
   }
 
-  if (record.method !== "health" && record.method !== "event" && record.method !== "window") {
+  if (record.method !== "health" && record.method !== "event" && record.method !== "window" && record.method !== "lease") {
     return { ok: false, id, code: typeof record.method === "string" ? "unknown-method" : "invalid-request", message: "Unknown IPC method" };
   }
 
@@ -275,6 +280,14 @@ export function validateIpcRequest(input: unknown): { ok: true; request: Validat
       return { ok: false, id, code: "invalid-params", message: validation.error };
     }
     return { ok: true, request: { id, method: "event", params: validation.event } };
+  }
+
+  if (record.method === "lease") {
+    const validation = validateLeaseParams(record.params);
+    if (!validation.ok) {
+      return { ok: false, id, code: "invalid-params", message: validation.error };
+    }
+    return { ok: true, request: { id, method: "lease", params: validation.params } };
   }
 
   const params = record.params;
@@ -296,9 +309,14 @@ export async function dispatchIpcRequest(input: unknown, handlers: IpcDispatcher
     if (request.method === "event") {
       return { id: request.id, ok: true, result: await handlers.event(request.params) };
     }
+    if (request.method === "lease") {
+      if (!handlers.lease) return createIpcErrorResponse(request.id, "unknown-method", "Unknown IPC method");
+      return { id: request.id, ok: true, result: await handlers.lease(request.params) };
+    }
     return { id: request.id, ok: true, result: await handlers.window(request.params.action) };
   } catch (error) {
-    return createIpcErrorResponse(validation.request.id, "internal-error", error instanceof Error ? error.message : "OpenPets IPC request failed");
+    const code = isIpcProtocolError(error) && isIpcErrorCode(error.code) ? error.code : "internal-error";
+    return createIpcErrorResponse(validation.request.id, code, error instanceof Error ? error.message : "OpenPets IPC request failed");
   }
 }
 
@@ -403,4 +421,14 @@ function ipcProtocolError(code: IpcErrorCode, message: string) {
 
 function isIpcProtocolError(error: unknown): error is Error & { code: IpcErrorCode } {
   return error instanceof Error && "code" in error && typeof error.code === "string";
+}
+
+function isIpcErrorCode(value: string): value is IpcErrorCode {
+  return value === "invalid-json"
+    || value === "invalid-request"
+    || value === "unknown-method"
+    || value === "invalid-params"
+    || value === "payload-too-large"
+    || value === "timeout"
+    || value === "internal-error";
 }
