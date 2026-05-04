@@ -21,6 +21,7 @@ const initialState: RendererPetState = {
 
 export function App() {
   const [petState, setPetState] = useState<RendererPetState>(initialState);
+  const [visibleMessage, setVisibleMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const unsubscribe = window.openPets.onPetState((state) => setPetState(state));
@@ -28,10 +29,25 @@ export function App() {
     return unsubscribe;
   }, []);
 
+  useEffect(() => {
+    const message = petState.event?.message;
+    if (!message) {
+      setVisibleMessage(null);
+      return;
+    }
+
+    setVisibleMessage(message);
+    const timeout = setTimeout(
+      () => setVisibleMessage(null),
+      petState.event?.state === "success" || petState.event?.state === "error" ? 5000 : 4000,
+    );
+    return () => clearTimeout(timeout);
+  }, [petState.event?.message, petState.event?.timestamp, petState.event?.state]);
+
   return (
     <main className="overlay-shell">
       <div className="pet-container">
-        {petState.event?.message ? <div className="speech-bubble">{petState.event.message}</div> : null}
+        {visibleMessage ? <div className="speech-bubble">{visibleMessage}</div> : null}
         <PetSprite
           state={petState.state}
           scale={(petState.scale ?? 1) * BASE_PIXEL_SCALE}

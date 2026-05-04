@@ -1,27 +1,27 @@
+import { createConnection } from "node:net";
 import { isOpenPetsState, type OpenPetsEvent, type OpenPetsState } from "@openpets/core";
+import {
+  getDefaultOpenPetsIpcEndpoint,
+  isOpenPetsWindowAction,
+  MAX_IPC_FRAME_BYTES,
+  OPENPETS_IPC_PROTOCOL_VERSION,
+  parseIpcFrame,
+  serializeIpcRequest,
+  type IpcErrorCode,
+  type IpcResponse,
+  type OpenPetsHealthV2,
+  type OpenPetsWindowAction,
+} from "@openpets/core/ipc";
 import { OpenPetsClientError } from "./errors.js";
 import { normalizeEventInput, type OpenPetsEventInput } from "./event-input.js";
 
-const DEFAULT_BASE_URL = "http://127.0.0.1:4738";
-const SUPPORTED_PROTOCOL_VERSION = 1;
-
 export type OpenPetsClientOptions = {
-  baseUrl?: string;
+  endpoint?: string;
   timeoutMs?: number;
   verifyOpenPets?: boolean;
 };
 
-export type OpenPetsHealth = {
-  app: "openpets";
-  ok: boolean;
-  version: string;
-  protocolVersion: 1;
-  capabilities: string[];
-  ready: boolean;
-  activePet: string | null;
-  debug?: boolean;
-  window?: unknown;
-};
+export type OpenPetsHealth = OpenPetsHealthV2;
 
 export type OpenPetsSafeResult =
   | { ok: true; state?: OpenPetsState }
@@ -32,19 +32,21 @@ export type OpenPetsClient = {
   isRunning(options?: OpenPetsClientOptions): Promise<boolean>;
   sendEvent(event: OpenPetsEventInput, options?: OpenPetsClientOptions): Promise<{ ok: true; state: OpenPetsState }>;
   safeSendEvent(event: OpenPetsEventInput, options?: OpenPetsClientOptions): Promise<OpenPetsSafeResult>;
+  windowAction(action: OpenPetsWindowAction, options?: OpenPetsClientOptions): Promise<{ ok: true; action: OpenPetsWindowAction }>;
 };
 
-type RequestBudget = {
-  controller: AbortController;
-  timeout: ReturnType<typeof setTimeout>;
+type ResolvedOptions = {
+  endpoint: string;
+  timeoutMs: number | undefined;
+  verifyOpenPets: boolean;
 };
 
 export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenPetsClient {
-  let verifiedBaseUrl: string | null = null;
+  let verifiedEndpoint: string | null = null;
 
-  function mergedOptions(overrides: OpenPetsClientOptions = {}) {
+  function mergedOptions(overrides: OpenPetsClientOptions = {}): ResolvedOptions {
     return {
-      baseUrl: resolveBaseUrl(overrides.baseUrl ?? options.baseUrl),
+      endpoint: overrides.endpoint ?? options.endpoint ?? getDefaultOpenPetsIpcEndpoint(),
       timeoutMs: overrides.timeoutMs ?? options.timeoutMs,
       verifyOpenPets: overrides.verifyOpenPets ?? options.verifyOpenPets ?? true,
     };
@@ -52,36 +54,33 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
 
   async function getHealthForClient(overrides: OpenPetsClientOptions = {}) {
     const merged = mergedOptions(overrides);
-    return fetchHealth(merged.baseUrl, merged.timeoutMs ?? 1000);
-  }
-
-  async function verifyOpenPets(overrides: OpenPetsClientOptions = {}) {
-    const merged = mergedOptions(overrides);
-    if (!merged.verifyOpenPets || verifiedBaseUrl === merged.baseUrl) return;
-    await fetchHealth(merged.baseUrl, merged.timeoutMs ?? 1000);
-    verifiedBaseUrl = merged.baseUrl;
+    return fetchHealth(merged.endpoint, merged.timeoutMs ?? 1000);
   }
 
   async function sendEventForClient(event: OpenPetsEventInput, overrides: OpenPetsClientOptions = {}) {
     const merged = mergedOptions(overrides);
     const timeoutMs = merged.timeoutMs ?? 1000;
     const deadline = Date.now() + timeoutMs;
-    if (merged.verifyOpenPets && verifiedBaseUrl !== merged.baseUrl) {
-      await fetchHealth(merged.baseUrl, remainingMs(deadline));
-      verifiedBaseUrl = merged.baseUrl;
+    if (merged.verifyOpenPets && verifiedEndpoint !== merged.endpoint) {
+      await fetchHealth(merged.endpoint, remainingMs(deadline));
+      verifiedEndpoint = merged.endpoint;
     }
-    const normalized = normalizeEventInput(event);
-    const result = await postEvent(merged.baseUrl, normalized, remainingMs(deadline));
-    return result;
+    return sendEventIpc(merged.endpoint, normalizeEventInput(event), remainingMs(deadline));
   }
 
   async function safeSendEventForClient(event: OpenPetsEventInput, overrides: OpenPetsClientOptions = {}) {
     try {
-      const merged = { ...overrides, timeoutMs: overrides.timeoutMs ?? options.timeoutMs ?? 400 };
-      return await sendEventForClient(event, merged);
+      return await sendEventForClient(event, { ...overrides, timeoutMs: overrides.timeoutMs ?? options.timeoutMs ?? 400 });
     } catch (error) {
       return { ok: false, error: toClientError(error) } as const;
     }
+  }
+
+  async function windowActionForClient(action: OpenPetsWindowAction, overrides: OpenPetsClientOptions = {}) {
+    if (!isOpenPetsWindowAction(action)) throw new OpenPetsClientError("rejected", "Invalid OpenPets window action");
+    const merged = mergedOptions(overrides);
+    const response = await requestIpc(merged.endpoint, { id: createRequestId("window"), method: "window", params: { action } }, merged.timeoutMs ?? 1000);
+    return validateWindowActionResult(unwrapIpcResult(response));
   }
 
   return {
@@ -96,6 +95,7 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     },
     sendEvent: sendEventForClient,
     safeSendEvent: safeSendEventForClient,
+    windowAction: windowActionForClient,
   };
 }
 
@@ -117,36 +117,105 @@ export function safeSendEvent(event: OpenPetsEventInput, options?: OpenPetsClien
   return defaultClient.safeSendEvent(event, options);
 }
 
-function resolveBaseUrl(baseUrl: string | undefined) {
-  const envBaseUrl = typeof process !== "undefined" ? process.env.OPENPETS_BASE_URL : undefined;
-  return (baseUrl ?? envBaseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+export function windowAction(action: OpenPetsWindowAction, options?: OpenPetsClientOptions) {
+  return defaultClient.windowAction(action, options);
 }
 
-function remainingMs(deadline: number) {
-  return Math.max(1, deadline - Date.now());
+async function fetchHealth(endpoint: string, timeoutMs: number): Promise<OpenPetsHealth> {
+  const response = await requestIpc(endpoint, { id: createRequestId("health"), method: "health" }, timeoutMs);
+  return validateIpcHealth(unwrapIpcResult(response));
 }
 
-async function fetchHealth(baseUrl: string, timeoutMs: number): Promise<OpenPetsHealth> {
-  const response = await fetchJson(`${baseUrl}/health`, { method: "GET" }, timeoutMs);
-  if (!response || typeof response !== "object" || Array.isArray(response)) {
-    throw new OpenPetsClientError("invalid-response", "OpenPets health response must be an object");
-  }
-  const record = response as Record<string, unknown>;
-  if (record.app !== "openpets") {
-    throw new OpenPetsClientError("not-openpets", "Port is not served by OpenPets");
-  }
-  if (record.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
-    throw new OpenPetsClientError("incompatible-protocol", "OpenPets protocol version is not supported");
-  }
-  if (typeof record.ok !== "boolean" || typeof record.version !== "string" || typeof record.ready !== "boolean") {
-    throw new OpenPetsClientError("invalid-response", "OpenPets health response is missing required fields");
-  }
+async function sendEventIpc(endpoint: string, event: OpenPetsEvent, timeoutMs: number): Promise<{ ok: true; state: OpenPetsState }> {
+  const response = await requestIpc(endpoint, { id: createRequestId("event"), method: "event", params: event }, timeoutMs);
+  return validateEventResult(unwrapIpcResult(response));
+}
+
+function requestIpc(endpoint: string, request: { id: string; method: "health" | "event" | "window"; params?: unknown }, timeoutMs: number): Promise<IpcResponse> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let buffer = Buffer.alloc(0);
+    const socket = createConnection(endpoint);
+    const timeout = setTimeout(() => settle(reject, new OpenPetsClientError("timeout", "OpenPets request timed out")), timeoutMs);
+
+    socket.on("connect", () => {
+      try {
+        socket.write(serializeIpcRequest(request));
+      } catch (error) {
+        settle(reject, error);
+      }
+    });
+
+    socket.on("data", (chunk) => {
+      buffer = Buffer.concat([buffer, typeof chunk === "string" ? Buffer.from(chunk) : chunk]);
+      if (buffer.byteLength > MAX_IPC_FRAME_BYTES) {
+        settle(reject, new OpenPetsClientError("invalid-response", "OpenPets IPC response is too large"));
+        return;
+      }
+      const newlineIndex = buffer.indexOf(0x0a);
+      if (newlineIndex < 0) return;
+      try {
+        settle(resolve, validateIpcResponse(parseIpcFrame(buffer.subarray(0, newlineIndex + 1)), request.id));
+      } catch (error) {
+        settle(reject, error);
+      }
+    });
+
+    socket.on("end", () => {
+      if (!settled) settle(reject, new OpenPetsClientError("invalid-response", "OpenPets IPC response ended before a complete frame"));
+    });
+    socket.on("close", () => {
+      if (!settled) settle(reject, new OpenPetsClientError("not-running", "OpenPets is not running or cannot be reached"));
+    });
+    socket.on("error", (error: NodeJS.ErrnoException) => {
+      settle(reject, error.code === "ENOENT" || error.code === "ECONNREFUSED"
+        ? new OpenPetsClientError("not-running", "OpenPets is not running or cannot be reached", { cause: error })
+        : toClientError(error));
+    });
+
+    function settle<T>(fn: (value: T) => void, value: T) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      socket.destroy();
+      fn(value);
+    }
+  });
+}
+
+function validateIpcResponse(input: unknown, expectedId: string): IpcResponse {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new OpenPetsClientError("invalid-response", "OpenPets IPC response must be an object");
+  const record = input as Record<string, unknown>;
+  if (typeof record.id !== "string" || typeof record.ok !== "boolean") throw new OpenPetsClientError("invalid-response", "OpenPets IPC response is missing required fields");
+  if (record.id !== expectedId) throw new OpenPetsClientError("invalid-response", "OpenPets IPC response id did not match request id");
+  if (record.ok) return { id: record.id, ok: true, result: record.result };
+  const error = record.error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) throw new OpenPetsClientError("invalid-response", "OpenPets IPC error response is invalid");
+  const code = (error as Record<string, unknown>).code;
+  const message = (error as Record<string, unknown>).message;
+  return { id: record.id, ok: false, error: { code: typeof code === "string" ? code as IpcErrorCode : "internal-error", message: typeof message === "string" ? message : "OpenPets IPC request failed" } };
+}
+
+function unwrapIpcResult(response: IpcResponse) {
+  if (response.ok) return response.result;
+  if (response.error.code === "timeout") throw new OpenPetsClientError("timeout", response.error.message);
+  if (response.error.code === "invalid-params") throw new OpenPetsClientError("rejected", response.error.message);
+  throw new OpenPetsClientError("invalid-response", response.error.message);
+}
+
+function validateIpcHealth(input: unknown): OpenPetsHealthV2 {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new OpenPetsClientError("invalid-response", "OpenPets IPC health response must be an object");
+  const record = input as Record<string, unknown>;
+  if (record.app !== "openpets") throw new OpenPetsClientError("not-openpets", "IPC endpoint is not served by OpenPets");
+  if (record.protocolVersion !== OPENPETS_IPC_PROTOCOL_VERSION || record.transport !== "ipc") throw new OpenPetsClientError("incompatible-protocol", "OpenPets IPC protocol version is not supported");
+  if (record.ok !== true || typeof record.version !== "string" || typeof record.ready !== "boolean") throw new OpenPetsClientError("invalid-response", "OpenPets IPC health response is missing required fields");
   return {
     app: "openpets",
-    ok: record.ok,
+    ok: true,
     version: record.version,
-    protocolVersion: SUPPORTED_PROTOCOL_VERSION,
-    capabilities: Array.isArray(record.capabilities) ? record.capabilities.filter((item) => typeof item === "string") : [],
+    protocolVersion: OPENPETS_IPC_PROTOCOL_VERSION,
+    transport: "ipc",
+    capabilities: Array.isArray(record.capabilities) ? record.capabilities.filter((item) => item === "event-v2" || item === "window-v1" || item === "speech-v1") : [],
     ready: record.ready,
     activePet: typeof record.activePet === "string" ? record.activePet : null,
     ...(typeof record.debug === "boolean" ? { debug: record.debug } : {}),
@@ -154,70 +223,30 @@ async function fetchHealth(baseUrl: string, timeoutMs: number): Promise<OpenPets
   };
 }
 
-async function postEvent(baseUrl: string, event: OpenPetsEvent, timeoutMs: number): Promise<{ ok: true; state: OpenPetsState }> {
-  const response = await fetchJson(
-    `${baseUrl}/event`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(event),
-    },
-    timeoutMs,
-  );
-  if (!response || typeof response !== "object" || Array.isArray(response)) {
-    throw new OpenPetsClientError("invalid-response", "OpenPets event response must be an object");
-  }
-  const record = response as Record<string, unknown>;
-  if (record.ok !== true) {
-    throw new OpenPetsClientError("rejected", typeof record.error === "string" ? record.error : "OpenPets rejected event");
-  }
-  if (!isOpenPetsState(record.state)) {
-    throw new OpenPetsClientError("invalid-response", "OpenPets event response is missing state");
-  }
+function validateEventResult(input: unknown): { ok: true; state: OpenPetsState } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new OpenPetsClientError("invalid-response", "OpenPets event response must be an object");
+  const record = input as Record<string, unknown>;
+  if (!isOpenPetsState(record.state)) throw new OpenPetsClientError("invalid-response", "OpenPets event response is missing state");
   return { ok: true, state: record.state };
 }
 
-async function fetchJson(url: string, init: RequestInit, timeoutMs: number): Promise<unknown> {
-  const budget = createRequestBudget(timeoutMs);
-  try {
-    const response = await fetch(url, { ...init, signal: budget.controller.signal });
-    const text = await response.text();
-    let body: unknown;
-    try {
-      body = text.length > 0 ? JSON.parse(text) : null;
-    } catch (error) {
-      throw new OpenPetsClientError("invalid-response", "OpenPets response was not valid JSON", { status: response.status, cause: error });
-    }
-    if (!response.ok) {
-      const errorMessage = body && typeof body === "object" && "error" in body && typeof body.error === "string"
-        ? body.error
-        : `OpenPets request failed with HTTP ${response.status}`;
-      throw new OpenPetsClientError("rejected", errorMessage, { status: response.status });
-    }
-    return body;
-  } catch (error) {
-    throw toClientError(error);
-  } finally {
-    clearTimeout(budget.timeout);
-  }
+function validateWindowActionResult(input: unknown): { ok: true; action: OpenPetsWindowAction } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new OpenPetsClientError("invalid-response", "OpenPets window response must be an object");
+  const record = input as Record<string, unknown>;
+  if (!isOpenPetsWindowAction(record.action)) throw new OpenPetsClientError("invalid-response", "OpenPets window response is missing action");
+  return { ok: true, action: record.action };
 }
 
-function createRequestBudget(timeoutMs: number): RequestBudget {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  return { controller, timeout };
+function remainingMs(deadline: number) {
+  return Math.max(1, deadline - Date.now());
+}
+
+function createRequestId(prefix: string) {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function toClientError(error: unknown): OpenPetsClientError {
   if (error instanceof OpenPetsClientError) return error;
-  if (error instanceof DOMException && error.name === "AbortError") {
-    return new OpenPetsClientError("timeout", "OpenPets request timed out", { cause: error });
-  }
-  if (error && typeof error === "object" && "name" in error && error.name === "AbortError") {
-    return new OpenPetsClientError("timeout", "OpenPets request timed out", { cause: error });
-  }
-  if (error instanceof TypeError) {
-    return new OpenPetsClientError("not-running", "OpenPets is not running or cannot be reached", { cause: error });
-  }
+  if (error && typeof error === "object" && "code" in error && (error.code === "ENOENT" || error.code === "ECONNREFUSED")) return new OpenPetsClientError("not-running", "OpenPets is not running or cannot be reached", { cause: error });
   return new OpenPetsClientError("network-error", "OpenPets request failed", { cause: error });
 }

@@ -1,11 +1,9 @@
 #!/usr/bin/env bun
 import { spawn } from "node:child_process";
 import { extname, resolve } from "node:path";
-import { getHealth, sendEvent as sendOpenPetsEvent, OpenPetsClientError, type OpenPetsHealth } from "@openpets/client";
+import { getHealth, sendEvent as sendOpenPetsEvent, windowAction as sendWindowAction, type OpenPetsHealth } from "@openpets/client";
 import { isOpenPetsState } from "@openpets/core";
 import { loadCodexPetDirectory } from "@openpets/pet-format-codex";
-
-const PORT = 4738;
 
 type CliOptions = Record<string, string | boolean>;
 
@@ -58,10 +56,6 @@ async function start(args: string[]) {
   }
 
   const health = await readHealthForCli();
-  if (isPortOwnedByAnotherService(health)) {
-    console.error(`Port ${PORT} is in use by a non-OpenPets service.`);
-    return 1;
-  }
   if (!(health instanceof Error) && health.app === "openpets") {
     if (desktopArgs.length > 0) {
       await launchDesktop(desktopArgs, { detached: !debug });
@@ -111,10 +105,6 @@ async function sendEvent(args: string[], options: { silent: boolean }) {
 
 async function windowAction(action: "show" | "hide" | "sleep" | "quit") {
   const health = await readHealthForCli();
-  if (isPortOwnedByAnotherService(health)) {
-    console.error(`Port ${PORT} is in use by a non-OpenPets service.`);
-    return 1;
-  }
   if (health instanceof Error) {
     if (action === "show") {
       await launchDesktop(["--openpets-action", "show"], { detached: true });
@@ -124,17 +114,16 @@ async function windowAction(action: "show" | "hide" | "sleep" | "quit") {
     return 1;
   }
 
-  await launchDesktop(["--openpets-action", action], { detached: true });
+  const response = await sendWindowAction(action).catch((error: unknown) => error);
+  if (response instanceof Error) {
+    console.error(response.message);
+    return 1;
+  }
   return 0;
 }
 
 async function readHealthForCli(): Promise<OpenPetsHealth | Error> {
   return getHealth({ timeoutMs: 500 }).catch((error: unknown) => error instanceof Error ? error : new Error(String(error)));
-}
-
-function isPortOwnedByAnotherService(result: OpenPetsHealth | Error) {
-  if (!(result instanceof OpenPetsClientError)) return false;
-  return result.code === "not-openpets" || result.code === "invalid-response" || result.code === "incompatible-protocol";
 }
 
 async function waitForHealth() {

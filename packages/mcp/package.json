@@ -1,0 +1,30 @@
+{
+  "name": "@openpets/mcp",
+  "version": "0.0.0",
+  "type": "module",
+  "bin": {
+    "openpets-mcp": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@openpets/client": "workspace:*",
+    "@openpets/core": "workspace:*",
+    "zod": "^4.1.13"
+  },
+  "scripts": {
+    "build": "bunx tsc -p tsconfig.json",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
+}

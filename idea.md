@@ -17,9 +17,9 @@ Shorter:
 OpenPets should start as:
 
 - a local desktop overlay
-- a small local event server, ideally hosted by the desktop app at first
+- a small local IPC event server, hosted by the desktop app
 - a CLI for sending events
-- Claude Code and OpenCode bridges in phase 1
+- MCP-first Claude Code and OpenCode integration
 - 1:1 support for Codex/Petdex animated pet packs
 - high-quality macOS, Linux, and Windows support from phase 1
 
@@ -63,7 +63,7 @@ Architecture:
 ```txt
 Any tool / script / AI agent / editor
         ↓
-OpenPets CLI / HTTP API / agent bridge
+OpenPets CLI / MCP / IPC client
         ↓
 Local OpenPets event server
         ↓
@@ -92,13 +92,11 @@ openpets event testing
 bun test && openpets event success || openpets event error
 ```
 
-### 2. Local HTTP API
+### 2. Local IPC client
 
-Useful for apps, editor extensions, and local tools.
+Useful for apps, editor extensions, and local tools running as the same user.
 
-```http
-POST http://localhost:4738/event
-```
+The supported programmatic surface is `@openpets/client` over OS IPC. There is no localhost HTTP integration API.
 
 ```json
 {
@@ -109,14 +107,14 @@ POST http://localhost:4738/event
 }
 ```
 
-### 3. Claude Code and OpenCode bridges
+### 3. Claude Code and OpenCode integrations
 
-Phase 1 should include first-class bridges for Claude Code and OpenCode:
+Agent integrations should prefer MCP:
 
-- Claude Code: hooks bridge via dedicated `claude-pets`
-- OpenCode: plugin bridge via dedicated `opencode-pets`
+- Claude Code: MCP config/instructions via dedicated `claude-pets`
+- OpenCode: MCP config/instructions via dedicated `opencode-pets` where supported
 
-These integrations should emit the same generic OpenPets events as the CLI.
+Optional hook/plugin adapters can still emit generic state events, but authored speech belongs in MCP tools.
 
 ### 4. WebSocket later
 
@@ -225,14 +223,14 @@ Recommended separation:
 - **Petdex**: gallery, registry, submissions, downloads
 - **OpenPets**: local runtime, overlay, CLI, protocol, integrations
 
-## Phase 1 MVP
+## MVP
 
 Build a strong phase 1 that demonstrates the magic while proving Claude Code, OpenCode, and cross-platform desktop support:
 
 1. `openpets start` opens a transparent always-on-top pet overlay.
 2. `openpets event <state>` changes the pet animation.
 3. OpenPets can load a local Codex/Petdex-compatible pet pack.
-4. Claude Code hooks can drive pet states.
+4. MCP tools can drive pet states and safe authored speech.
 5. OpenCode plugin events can drive pet states.
 6. macOS, Linux, and Windows are supported from the beginning.
 7. Include a shell/test-runner demo.

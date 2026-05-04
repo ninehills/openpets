@@ -1,4 +1,3 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,14 +9,13 @@ import {
   createManualEvent,
   reducePetEvent,
   tickPetState,
-  validateOpenPetsEvent,
   type OpenPetsEvent,
 } from "@openpets/core";
+import type { OpenPetsHealthV2, OpenPetsWindowAction } from "@openpets/core/ipc";
 import { getOpenPetsConfigPath, type OpenPetsConfig } from "@openpets/core/config";
 import { loadCodexPetDirectory, type LoadedCodexPet } from "@openpets/pet-format-codex";
+import { createDesktopIpcHandlers, startDesktopIpcServer, type DesktopIpcServerHandle } from "./ipc-server.js";
 
-const PORT = 4738;
-const HOST = "127.0.0.1";
 const CODEX_FRAME_WIDTH = 192;
 const CODEX_FRAME_HEIGHT = 208;
 const BASE_PIXEL_SCALE = 0.5;
@@ -36,9 +34,10 @@ let runtimeState = createInitialPetRuntimeState();
 let activePet: LoadedCodexPet | null = null;
 let config: OpenPetsConfig = {};
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
-let serverStarted = false;
+let ipcServerHandle: DesktopIpcServerHandle | null = null;
 let debugMode = isDebugEnabled(process.argv);
 let dragState: { startCursor: { x: number; y: number }; startBounds: Rectangle } | null = null;
+let rendererReady = false;
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
@@ -54,16 +53,23 @@ app.whenReady().then(async () => {
   debugLog("app ready", { argv: process.argv, debugMode });
   config = await loadConfig();
   await applyArgv(process.argv);
-  startLocalServer();
+  await startLocalIpcServer();
   await createPetWindow();
   publishState();
+});
+
+app.on("before-quit", () => {
+  void ipcServerHandle?.close();
 });
 
 app.on("window-all-closed", () => {
   // Keep the pet process alive unless the user explicitly quits.
 });
 
-ipcMain.on("renderer-ready", () => publishState());
+ipcMain.on("renderer-ready", () => {
+  rendererReady = true;
+  publishState();
+});
 ipcMain.on("window-action", (_event, action: unknown) => {
   if (isWindowAction(action)) {
     void handleWindowAction(action);
@@ -167,7 +173,7 @@ function installSecurityHeaders() {
             "script-src 'self'",
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' file: data:",
-            "connect-src 'self' http://127.0.0.1:4738 ws://127.0.0.1:5173 http://127.0.0.1:5173",
+            "connect-src 'self' ws://127.0.0.1:5173 http://127.0.0.1:5173",
             "object-src 'none'",
             "base-uri 'none'",
             "frame-ancestors 'none'",
@@ -191,89 +197,45 @@ function isAllowedRendererNavigation(url: string) {
   return url === "http://127.0.0.1:5173/" || url.startsWith(pathToFileURL(join(__dirname, "renderer")).href);
 }
 
-function startLocalServer() {
-  if (serverStarted) return;
-  serverStarted = true;
-  const server = createServer((request, response) => {
-    void handleRequest(request, response);
+async function startLocalIpcServer() {
+  if (ipcServerHandle) return;
+  const handlers = createDesktopIpcHandlers({
+    getHealth: getIpcHealth,
+    applyEvent,
+    handleWindowAction,
   });
-
-  server.on("error", (error: NodeJS.ErrnoException) => {
-    if (error.code === "EADDRINUSE") {
-      console.error(`OpenPets port ${PORT} is already in use.`);
-    } else {
-      console.error(error);
-    }
-  });
-
-  server.listen(PORT, HOST);
-}
-
-async function handleRequest(request: IncomingMessage, response: ServerResponse) {
-  if (request.url === "/health" && request.method === "GET") {
-    return json(response, 200, {
-      app: "openpets",
-      ok: true,
-      version: app.getVersion(),
-      protocolVersion: 1,
-      capabilities: ["event-v1"],
-      ready: Boolean(mainWindow),
-      activePet: activePet?.id ?? null,
-      debug: debugMode,
-      window: mainWindow
-        ? {
-            visible: mainWindow.isVisible(),
-            bounds: mainWindow.getBounds(),
-            focused: mainWindow.isFocused(),
-          }
-        : null,
-    });
-  }
-
-  if (request.url === "/event" && request.method === "POST") {
-    return handleEventRequest(request, response);
-  }
-
-  if (request.url === "/event") {
-    return json(response, 405, { ok: false, error: "Method not allowed" });
-  }
-
-  return json(response, 404, { ok: false, error: "Not found" });
-}
-
-async function handleEventRequest(request: IncomingMessage, response: ServerResponse) {
-  const contentType = request.headers["content-type"]?.toLowerCase() ?? "";
-  if (contentType.split(";")[0]?.trim() !== "application/json") {
-    return json(response, 415, { ok: false, error: "Unsupported content type" });
-  }
-
-  const origin = request.headers.origin;
-  if (origin) {
-    return json(response, 403, { ok: false, error: "Browser-origin requests are not allowed" });
-  }
-
-  const body = await readRequestBody(request, 16 * 1024).catch((error) => error);
-  if (body instanceof Error) {
-    return json(response, body.message === "Payload too large" ? 413 : 400, {
-      ok: false,
-      error: body.message,
-    });
-  }
-
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(body);
-  } catch {
-    return json(response, 400, { ok: false, error: "Invalid JSON" });
+    ipcServerHandle = await startDesktopIpcServer({
+      handlers,
+      onError: (error) => console.error(`OpenPets IPC server error: ${String(error)}`),
+    });
+    debugLog("ipc server started", { endpoint: ipcServerHandle.endpoint });
+  } catch (error) {
+    console.error(`OpenPets IPC server failed to start: ${String(error)}`);
+    app.exit(1);
+    return;
   }
+}
 
-  const validation = validateOpenPetsEvent(parsed);
-  if (!validation.ok) {
-    return json(response, 400, { ok: false, error: validation.error });
-  }
-
-  applyEvent(validation.event);
-  return json(response, 200, { ok: true, state: validation.event.state });
+function getIpcHealth(): OpenPetsHealthV2 {
+  return {
+    app: "openpets",
+    ok: true,
+    version: app.getVersion(),
+    protocolVersion: 2,
+    transport: "ipc",
+    capabilities: ["event-v2", "window-v1", "speech-v1"],
+    ready: Boolean(mainWindow && rendererReady && activePet),
+    activePet: activePet?.id ?? null,
+    debug: debugMode,
+    window: mainWindow
+      ? {
+          visible: mainWindow.isVisible(),
+          bounds: mainWindow.getBounds(),
+          focused: mainWindow.isFocused(),
+        }
+      : null,
+  };
 }
 
 function applyEvent(event: OpenPetsEvent) {
@@ -341,7 +303,7 @@ async function applyArgv(argv: string[]) {
   return action;
 }
 
-async function handleWindowAction(action: "show" | "hide" | "sleep" | "quit") {
+async function handleWindowAction(action: OpenPetsWindowAction) {
   switch (action) {
     case "show":
       config = { ...config, hidden: false };
@@ -513,20 +475,4 @@ function debugLog(message: string, details?: unknown) {
   if (!debugMode) return;
   const suffix = details === undefined ? "" : ` ${JSON.stringify(details)}`;
   console.error(`[openpets:debug] ${message}${suffix}`);
-}
-
-function json(response: ServerResponse, status: number, body: unknown) {
-  response.writeHead(status, { "content-type": "application/json; charset=utf-8" });
-  response.end(JSON.stringify(body));
-}
-
-async function readRequestBody(request: IncomingMessage, maxBytes: number) {
-  let body = "";
-  for await (const chunk of request) {
-    body += chunk;
-    if (Buffer.byteLength(body) > maxBytes) {
-      throw new Error("Payload too large");
-    }
-  }
-  return body;
 }
