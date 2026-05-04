@@ -25,6 +25,17 @@ const api = {
       ipcRenderer.send("window-action", action);
     }
   },
+  petInteraction(interaction: unknown) {
+    if (!interaction || typeof interaction !== "object") return;
+    const record = interaction as Record<string, unknown>;
+    const type = record.type;
+    if (type !== "drag-start" && type !== "drag-move" && type !== "drag-end" && type !== "click") return;
+    ipcRenderer.send("pet-interaction", {
+      type,
+      screenX: typeof record.screenX === "number" ? record.screenX : 0,
+      screenY: typeof record.screenY === "number" ? record.screenY : 0,
+    });
+  },
 };
 
 contextBridge.exposeInMainWorld("openPets", api);

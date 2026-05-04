@@ -8,7 +8,7 @@
     "start": "bun run build && bunx electron dist/main.js",
     "build": "bun run build:main && bun run build:preload && bunx vite build",
     "build:main": "bun build src/main.ts --target=node --external electron --outdir dist",
-    "build:preload": "bun build src/preload.ts --target=node --external electron --outdir dist",
+    "build:preload": "bun build src/preload.ts --target=node --format=cjs --external electron --outfile dist/preload.cjs",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

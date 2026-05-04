@@ -1,35 +1,29 @@
 # Example pets
 
-OpenPets includes a small starter set of generated Codex/Petdex-compatible pets for demos and alpha testing.
+OpenPets includes real Petdex-compatible pet packs for demos and alpha testing.
 
 Each pet directory contains:
 
 - `pet.json`
-- `spritesheet.png` at `1536x1872`
+- `spritesheet.webp` or `spritesheet.png` at `1536x1872`
 - 8 columns × 9 rows of `192x208` frames
 
 ## Included pets
 
 | Pet | Path | Description |
 |---|---|---|
-| Byte Cat | `examples/pets/byte-cat` | A pixel cat that naps between tool calls. |
-| Rubber Duck | `examples/pets/rubber-duck` | A tiny debugging duck for explaining problems out loud. |
-| Logic Bot | `examples/pets/logic-bot` | A small robot that lights up when your agent is working. |
-| Terminal Ghost | `examples/pets/terminal-ghost` | A friendly terminal ghost for late-night coding sessions. |
+| Slayer | `examples/pets/slayer` | A compact armored slayer digital pet with a green sci-fi helmet, bulky olive armor, and a round spiked shield. |
 
 ## Usage
 
 ```bash
-openpets start --pet ./examples/pets/byte-cat
-openpets start --pet ./examples/pets/rubber-duck
-openpets start --pet ./examples/pets/logic-bot
-openpets start --pet ./examples/pets/terminal-ghost
+openpets start --pet ./examples/pets/slayer
 ```
 
 Or, from source:
 
 ```bash
-bun packages/cli/src/index.ts start --pet ./examples/pets/byte-cat
+bun packages/cli/src/index.ts start --pet ./examples/pets/slayer
 ```
 
-The legacy minimal sample remains available at `examples/sample-pet`.
+The legacy generated minimal sample remains available at `examples/sample-pet` for loader testing.

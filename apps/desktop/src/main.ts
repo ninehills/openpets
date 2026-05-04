@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, screen, session } from "electron";
+import type { Rectangle } from "electron";
 import {
   createInitialPetRuntimeState,
   createManualEvent,
@@ -17,8 +18,16 @@ import { loadCodexPetDirectory, type LoadedCodexPet } from "@openpets/pet-format
 
 const PORT = 4738;
 const HOST = "127.0.0.1";
-const STARTUP_WIDTH = 240;
-const STARTUP_HEIGHT = 260;
+const CODEX_FRAME_WIDTH = 192;
+const CODEX_FRAME_HEIGHT = 208;
+const BASE_PIXEL_SCALE = 0.5;
+const PET_SAFE_PAD_X = 12;
+const PET_SAFE_PAD_TOP = 8;
+const PET_SAFE_PAD_BOTTOM = 16;
+const SPEECH_BUBBLE_SLOT_HEIGHT = 72;
+const SPEECH_BUBBLE_MAX_OUTER_WIDTH = 168;
+const MIN_WINDOW_WIDTH = 128;
+const DEFAULT_PET_SCALE = 1;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -28,6 +37,8 @@ let activePet: LoadedCodexPet | null = null;
 let config: OpenPetsConfig = {};
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 let serverStarted = false;
+let debugMode = isDebugEnabled(process.argv);
+let dragState: { startCursor: { x: number; y: number }; startBounds: Rectangle } | null = null;
 
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
@@ -40,6 +51,7 @@ app.on("second-instance", (_event, argv) => {
 
 app.whenReady().then(async () => {
   installSecurityHeaders();
+  debugLog("app ready", { argv: process.argv, debugMode });
   config = await loadConfig();
   await applyArgv(process.argv);
   startLocalServer();
@@ -57,33 +69,37 @@ ipcMain.on("window-action", (_event, action: unknown) => {
     void handleWindowAction(action);
   }
 });
+ipcMain.on("pet-interaction", (_event, interaction: unknown) => handlePetInteraction(interaction));
 
 async function createPetWindow() {
   const display = screen.getPrimaryDisplay();
   const { workArea } = display;
-  const position = config.position ?? {
-    x: workArea.x + workArea.width - STARTUP_WIDTH - 24,
-    y: workArea.y + workArea.height - STARTUP_HEIGHT - 24,
+  const windowSize = getWindowContentSize();
+  const initialPosition = config.position ?? {
+    x: workArea.x + workArea.width - windowSize.width - 24,
+    y: workArea.y + workArea.height - windowSize.height - 24,
   };
+  const position = clampWindowPosition(initialPosition, windowSize);
 
   mainWindow = new BrowserWindow({
-    width: STARTUP_WIDTH,
-    height: STARTUP_HEIGHT,
+    width: windowSize.width,
+    height: windowSize.height,
+    useContentSize: true,
     x: position.x,
     y: position.y,
-    transparent: true,
-    frame: false,
+    transparent: !debugMode,
+    frame: debugMode,
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: false,
-    resizable: false,
+    focusable: debugMode,
+    resizable: debugMode,
     movable: true,
     hasShadow: false,
-    backgroundColor: "#00000000",
+    backgroundColor: debugMode ? "#1f2937" : "#00000000",
     show: false,
     fullscreenable: false,
     webPreferences: {
-      preload: join(__dirname, "preload.js"),
+      preload: join(__dirname, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
@@ -95,7 +111,20 @@ async function createPetWindow() {
     },
   });
 
+  debugLog("created window", { position, bounds: mainWindow.getBounds() });
   mainWindow.on("moved", () => void saveWindowPosition());
+  mainWindow.webContents.on("did-finish-load", () => {
+    debugLog("renderer did-finish-load");
+    showPetWindow("did-finish-load");
+    publishState();
+  });
+  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    debugLog("renderer did-fail-load", { errorCode, errorDescription, validatedURL });
+  });
+  mainWindow.once("ready-to-show", () => {
+    debugLog("window ready-to-show");
+    showPetWindow("ready-to-show");
+  });
   hardenWindowNavigation(mainWindow);
 
   try {
@@ -111,13 +140,20 @@ async function createPetWindow() {
       console.error(`OpenPets built renderer load failed. ${String(fallbackError)}`);
     });
   }
+  showPetWindow("post-load");
+  if (debugMode) mainWindow.webContents.openDevTools({ mode: "detach" });
+}
 
-  mainWindow.once("ready-to-show", () => {
-    if (!config.hidden) {
-      mainWindow?.showInactive();
-    }
-    mainWindow?.setAlwaysOnTop(true, "floating");
-  });
+function showPetWindow(reason: string) {
+  if (!mainWindow || config.hidden) return;
+  mainWindow.setAlwaysOnTop(true, "floating");
+  if (debugMode) {
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    mainWindow.showInactive();
+  }
+  debugLog("show window", { reason, visible: mainWindow.isVisible(), bounds: mainWindow.getBounds() });
 }
 
 function installSecurityHeaders() {
@@ -181,6 +217,14 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       version: app.getVersion(),
       ready: Boolean(mainWindow),
       activePet: activePet?.id ?? null,
+      debug: debugMode,
+      window: mainWindow
+        ? {
+            visible: mainWindow.isVisible(),
+            bounds: mainWindow.getBounds(),
+            focused: mainWindow.isFocused(),
+          }
+        : null,
     });
   }
 
@@ -237,6 +281,7 @@ function applyEvent(event: OpenPetsEvent) {
 }
 
 function publishState() {
+  resizeWindowForCurrentScale();
   mainWindow?.webContents.send("pet-state", {
     state: runtimeState.rendered,
     event: runtimeState.event,
@@ -248,17 +293,25 @@ function publishState() {
 async function handleSecondInstance(argv: string[]) {
   const action = await applyArgv(argv);
   if (action !== "hide" && action !== "quit") {
-    mainWindow?.showInactive();
+    showPetWindow("second-instance");
   }
   publishState();
 }
 
 async function applyArgv(argv: string[]) {
+  debugMode = debugMode || isDebugEnabled(argv);
   const actionIndex = argv.indexOf("--openpets-action");
   const action = actionIndex >= 0 ? argv[actionIndex + 1] : undefined;
 
   const petIndex = argv.indexOf("--pet");
   const petPath = petIndex >= 0 ? argv[petIndex + 1] : undefined;
+  const scaleIndex = argv.indexOf("--scale");
+  const scaleValue = scaleIndex >= 0 ? Number(argv[scaleIndex + 1]) : NaN;
+  if (Number.isFinite(scaleValue)) {
+    config = { ...config, scale: normalizeScale(scaleValue) };
+    await saveConfig(config);
+    resizeWindowForCurrentScale();
+  }
   if (petPath) {
     const loaded = await loadCodexPetDirectory(resolve(petPath));
     if (loaded.ok) {
@@ -272,14 +325,12 @@ async function applyArgv(argv: string[]) {
     const loaded = await loadCodexPetDirectory(config.petPath);
     if (loaded.ok) {
       activePet = loaded.pet;
-    }
-  } else {
-    const loaded = await loadCodexPetDirectory(getBundledSamplePetPath());
-    if (loaded.ok) {
-      activePet = loaded.pet;
     } else {
       console.error(loaded.issues.map((item) => item.message).join("\n"));
+      await loadDefaultPet();
     }
+  } else {
+    await loadDefaultPet();
   }
 
   if (action === "show" || action === "hide" || action === "sleep" || action === "quit") {
@@ -293,7 +344,7 @@ async function handleWindowAction(action: "show" | "hide" | "sleep" | "quit") {
     case "show":
       config = { ...config, hidden: false };
       await saveConfig(config);
-      mainWindow?.showInactive();
+      showPetWindow("show-action");
       break;
     case "hide":
       config = { ...config, hidden: true };
@@ -313,7 +364,43 @@ function isWindowAction(action: unknown): action is "show" | "hide" | "sleep" | 
   return action === "show" || action === "hide" || action === "sleep" || action === "quit";
 }
 
+function handlePetInteraction(interaction: unknown) {
+  if (!mainWindow || !interaction || typeof interaction !== "object") return;
+  const record = interaction as Record<string, unknown>;
+  const type = record.type;
+  const screenX = typeof record.screenX === "number" ? record.screenX : 0;
+  const screenY = typeof record.screenY === "number" ? record.screenY : 0;
+
+  if (type === "click") {
+    debugLog("pet click");
+    return;
+  }
+
+  if (type === "drag-start") {
+    dragState = {
+      startCursor: { x: screenX, y: screenY },
+      startBounds: mainWindow.getBounds(),
+    };
+    return;
+  }
+
+  if (type === "drag-move" && dragState) {
+    const nextX = Math.round(dragState.startBounds.x + screenX - dragState.startCursor.x);
+    const nextY = Math.round(dragState.startBounds.y + screenY - dragState.startCursor.y);
+    const currentBounds = mainWindow.getBounds();
+    if (currentBounds.x === nextX && currentBounds.y === nextY) return;
+    mainWindow.setPosition(nextX, nextY, false);
+    return;
+  }
+
+  if (type === "drag-end") {
+    dragState = null;
+    void saveWindowPosition();
+  }
+}
+
 async function saveWindowPosition() {
+  if (dragState) return;
   const bounds = mainWindow?.getBounds();
   if (!bounds) return;
   config = { ...config, position: { x: bounds.x, y: bounds.y } };
@@ -349,17 +436,81 @@ function scheduleExpiration() {
   }, delay + 5);
 }
 
-function getBundledSamplePetPath() {
-  if (app.isPackaged) {
-    return join(process.resourcesPath, "sample-pet");
+async function loadDefaultPet() {
+  const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
+  if (loaded.ok) {
+    activePet = loaded.pet;
+  } else {
+    console.error(loaded.issues.map((item) => item.message).join("\n"));
   }
-  return resolve(__dirname, "../../../examples/sample-pet");
+}
+
+function getBundledDefaultPetPath() {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, "pets", "slayer");
+  }
+  return resolve(__dirname, "../../../examples/pets/slayer");
 }
 
 function normalizeScale(scale: unknown) {
   return typeof scale === "number" && Number.isFinite(scale)
     ? Math.min(2, Math.max(0.25, scale))
-    : 0.8;
+    : DEFAULT_PET_SCALE;
+}
+
+function getVisualScale() {
+  return normalizeScale(config.scale) * BASE_PIXEL_SCALE;
+}
+
+function getWindowContentSize() {
+  const visualScale = getVisualScale();
+  const petWidth = Math.ceil(CODEX_FRAME_WIDTH * visualScale);
+  const petHeight = Math.ceil(CODEX_FRAME_HEIGHT * visualScale);
+  return {
+    width: Math.ceil(Math.max(petWidth + PET_SAFE_PAD_X * 2, SPEECH_BUBBLE_MAX_OUTER_WIDTH, MIN_WINDOW_WIDTH)),
+    height: Math.ceil(SPEECH_BUBBLE_SLOT_HEIGHT + PET_SAFE_PAD_TOP + petHeight + PET_SAFE_PAD_BOTTOM),
+  };
+}
+
+function clampWindowPosition(position: { x: number; y: number }, size: { width: number; height: number }) {
+  const { workArea } = screen.getDisplayNearestPoint(position);
+  return {
+    x: clamp(position.x, workArea.x, workArea.x + workArea.width - size.width),
+    y: clamp(position.y, workArea.y, workArea.y + workArea.height - size.height),
+  };
+}
+
+function resizeWindowForCurrentScale() {
+  if (!mainWindow) return;
+  const size = getWindowContentSize();
+  const [currentWidth, currentHeight] = mainWindow.getContentSize();
+  if (currentWidth === size.width && currentHeight === size.height) return;
+
+  const oldBounds = mainWindow.getBounds();
+  const anchorX = oldBounds.x + oldBounds.width;
+  const anchorY = oldBounds.y + oldBounds.height;
+  mainWindow.setContentSize(size.width, size.height, false);
+
+  const newBounds = mainWindow.getBounds();
+  const { workArea } = screen.getDisplayMatching(oldBounds);
+  const nextX = clamp(anchorX - newBounds.width, workArea.x, workArea.x + workArea.width - newBounds.width);
+  const nextY = clamp(anchorY - newBounds.height, workArea.y, workArea.y + workArea.height - newBounds.height);
+  mainWindow.setPosition(nextX, nextY, false);
+}
+
+function clamp(value: number, min: number, max: number) {
+  if (max < min) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function isDebugEnabled(argv: string[]) {
+  return process.env.OPENPETS_DEBUG === "1" || argv.includes("--debug") || argv.includes("--openpets-debug");
+}
+
+function debugLog(message: string, details?: unknown) {
+  if (!debugMode) return;
+  const suffix = details === undefined ? "" : ` ${JSON.stringify(details)}`;
+  console.error(`[openpets:debug] ${message}${suffix}`);
 }
 
 function json(response: ServerResponse, status: number, body: unknown) {

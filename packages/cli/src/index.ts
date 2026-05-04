@@ -44,6 +44,16 @@ async function main(argv: string[]) {
 async function start(args: string[]) {
   const options = parseOptions(args);
   const desktopArgs = [] as string[];
+  const debug = Boolean(options.debug) || process.env.OPENPETS_DEBUG === "1";
+  if (debug) desktopArgs.push("--openpets-debug");
+  if (typeof options.scale === "string") {
+    const scale = Number(options.scale);
+    if (!Number.isFinite(scale) || scale < 0.25 || scale > 2) {
+      console.error("Scale must be a number between 0.25 and 2.");
+      return 1;
+    }
+    desktopArgs.push("--scale", String(scale));
+  }
   if (typeof options.pet === "string") {
     const validation = await validatePetArgument(options.pet);
     if (!validation.ok) {
@@ -60,12 +70,12 @@ async function start(args: string[]) {
   }
   if (health?.app === "openpets") {
     if (desktopArgs.length > 0) {
-      await launchDesktop(desktopArgs, { detached: true });
+      await launchDesktop(desktopArgs, { detached: !debug });
     }
     return waitForHealth();
   }
 
-  await launchDesktop(desktopArgs, { detached: true });
+  await launchDesktop(desktopArgs, { detached: !debug });
   return waitForHealth();
 }
 
@@ -369,7 +379,9 @@ function printHelp() {
   console.log(`OpenPets
 
 Usage:
-  openpets start [--pet ./sample-pet]
+  openpets start [--pet ./examples/pets/slayer]
+  openpets start [--pet ./examples/pets/slayer] [--scale 1]
+  openpets start --debug [--pet ./examples/pets/slayer] [--scale 1]
   openpets event <state> [--source cli] [--message text] [--tool tool] [--type type]
   openpets show|hide|sleep|quit
   openpets hook claude-code
