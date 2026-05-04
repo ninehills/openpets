@@ -32,9 +32,19 @@ same-user OS IPC
 OpenPets desktop pet
 ```
 
-## Quick start
+## Install
 
-> OpenPets is currently optimized for local development and testing. Packaged installers come later.
+OpenPets `0.1.0` is a desktop preview. macOS is the known-good baseline; Windows and Linux artifacts are preview-quality until native-host smoke testing is complete.
+
+1. Download the latest artifact for your platform from GitHub Releases.
+2. Install or unzip it.
+3. Launch OpenPets. It appears in the menu bar/tray and shows the desktop pet.
+
+See [INSTALL.md](INSTALL.md) for Claude Code setup, unsigned-preview notes, and troubleshooting.
+
+## Developer quick start
+
+Use this if you are working from the source repo:
 
 ```bash
 git clone https://github.com/alvinunreal/openpets.git
@@ -68,7 +78,13 @@ bun packages/cli/src/index.ts quit
 
 ## Claude Code setup
 
-Build OpenPets first:
+For preview installs, add the MCP server to Claude Code:
+
+```bash
+claude mcp add -s user openpets -- bunx @openpets/mcp
+```
+
+If the MCP package has not been published yet, build OpenPets first:
 
 ```bash
 bun run build
@@ -94,6 +110,7 @@ Restart Claude Code. Then Claude can use:
 | `openpets_start` | Launch the local desktop pet if needed. |
 | `openpets_set_state` | Set status without speech. |
 | `openpets_say` | Send a short, safe progress message. |
+| `openpets_release` | Release this Claude session's lease without quitting shared pets. |
 
 Recommended agent flow:
 
@@ -172,4 +189,4 @@ bun run dev:desktop
 
 ## Status
 
-OpenPets is early and local-first. The core desktop, IPC client, CLI, and MCP tools are working; distribution packaging and polished installers are next.
+OpenPets is early and local-first. The v0.1 target is a desktop preview with macOS as the known-good baseline, Windows/Linux preview artifacts after native-host smoke testing, Claude MCP support, and developer-oriented source workflows. Auto-update, signing polish, and a production CLI are later.

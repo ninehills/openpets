@@ -1,6 +1,8 @@
 {
   "name": "@openpets/mcp",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "MCP server for controlling the local OpenPets desktop pet.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "openpets-mcp": "./dist/index.js"
@@ -12,10 +14,13 @@
     }
   },
   "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openpets/client": "workspace:*",
-    "@openpets/core": "workspace:*",
+    "@openpets/client": "0.1.0",
+    "@openpets/core": "0.1.0",
     "zod": "^4.1.13"
   },
   "scripts": {

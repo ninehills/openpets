@@ -1,6 +1,9 @@
 {
   "name": "@openpets/pet-format-codex",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Internal Codex/Petdex pet format loader for OpenPets.",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

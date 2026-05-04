@@ -1,6 +1,8 @@
 {
   "name": "@openpets/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Core event, reducer, lifecycle, and IPC contracts for OpenPets.",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -17,6 +19,9 @@
     }
   },
   "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "bunx tsc -p tsconfig.json",
     "test": "bun test",

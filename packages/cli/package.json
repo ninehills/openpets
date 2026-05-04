@@ -1,6 +1,9 @@
 {
   "name": "@openpets/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Developer-only local CLI for OpenPets.",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "openpets": "./src/index.ts"

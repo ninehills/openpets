@@ -259,10 +259,9 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
 }
 
 function getTrayIcon() {
-  const candidates = [
-    join(__dirname, "../../../assets/tray-icon.png"),
-    join(process.resourcesPath ?? "", "assets", "tray-icon.png"),
-  ];
+  const candidates = app.isPackaged
+    ? [join(process.resourcesPath, "assets", "tray-icon.png")]
+    : [join(__dirname, "../../../assets/tray-icon.png")];
   for (const candidate of candidates) {
     const image = nativeImage.createFromPath(candidate);
     if (!image.isEmpty()) return image.resize({ width: 18, height: 18, quality: "best" });

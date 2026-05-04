@@ -1,0 +1,63 @@
+appId: com.openpets.app
+productName: OpenPets
+copyright: Copyright © 2026 Alvin
+
+directories:
+  output: ../../release/desktop
+
+files:
+  - dist/**/*
+  - package.json
+
+extraResources:
+  - from: ../../examples/pets/slayer
+    to: pets/slayer
+  - from: ../../assets/tray-icon.png
+    to: assets/tray-icon.png
+
+mac:
+  category: public.app-category.developer-tools
+  icon: build/icon.icns
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+
+dmg:
+  sign: false
+  artifactName: OpenPets-${version}-${arch}.${ext}
+
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: OpenPets-Setup-${version}-${arch}.${ext}
+
+portable:
+  artifactName: OpenPets-Portable-${version}-${arch}.${ext}
+
+linux:
+  icon: build/icon.png
+  category: Utility
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64
+
+artifactName: OpenPets-${version}-${arch}.${ext}
