@@ -1,6 +1,6 @@
 {
-  "name": "@openpets/client",
-  "version": "0.1.0",
+  "name": "@open-pets/client",
+  "version": "0.1.1",
   "description": "TypeScript IPC client for OpenPets desktop.",
   "license": "MIT",
   "type": "module",
@@ -15,7 +15,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@openpets/core": "0.1.0"
+    "@open-pets/core": "0.1.1"
   },
   "scripts": {
     "build": "bunx tsc -p tsconfig.json",

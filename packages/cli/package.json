@@ -1,23 +1,32 @@
 {
-  "name": "@openpets/cli",
+  "name": "@open-pets/cli",
   "version": "0.1.0",
-  "private": true,
-  "description": "Developer-only local CLI for OpenPets.",
+  "description": "Command-line tools for OpenPets.",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "openpets": "./src/index.ts"
+    "openpets": "dist/index.js"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
-    "@openpets/client": "workspace:*",
-    "@openpets/core": "workspace:*",
-    "@openpets/pet-format-codex": "workspace:*"
+    "@open-pets/client": "0.1.1",
+    "@open-pets/core": "0.1.1",
+    "@open-pets/pet-format-codex": "0.1.0",
+    "jszip": "^3.10.1"
   },
   "scripts": {
+    "build": "rm -rf dist && bunx tsc -p tsconfig.json",
     "dev": "bun src/index.ts",
+    "prepack": "bun run build",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "test": "bun test"
   },

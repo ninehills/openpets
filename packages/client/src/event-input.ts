@@ -4,7 +4,7 @@ import {
   validateOpenPetsEvent,
   type OpenPetsEvent,
   type OpenPetsState,
-} from "@openpets/core";
+} from "@open-pets/core";
 import { OpenPetsClientError } from "./errors.js";
 
 export type OpenPetsEventInput =

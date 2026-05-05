@@ -46,13 +46,19 @@ Linux tray support varies by desktop environment. GNOME may require AppIndicator
 
 ## Claude Code setup
 
-Install the MCP server after the desktop app is installed:
+After the desktop app is installed and launched once, add the OpenPets MCP server:
 
 ```bash
-claude mcp add -s user openpets -- bunx @openpets/mcp
+claude mcp add -s user openpets -- bunx @open-pets/mcp
 ```
 
-Then restart Claude Code and ask Claude to use:
+Restart Claude Code, then confirm it is listed:
+
+```bash
+claude mcp list
+```
+
+Claude can now use:
 
 - `openpets_health`
 - `openpets_start`
@@ -60,15 +66,23 @@ Then restart Claude Code and ask Claude to use:
 - `openpets_set_state`
 - `openpets_release`
 
-If `@openpets/mcp` has not been published yet, use a built local checkout:
+### Optional: automatic Claude Code reactions
+
+For automatic pet state changes while Claude works, install Claude Pets hooks globally:
 
 ```bash
-git clone https://github.com/alvinunreal/openpets.git
-cd openpets
-bun install
-bun run build
-claude mcp add -s user openpets -- bun /path/to/openpets/packages/mcp/dist/index.js
+bunx @open-pets/claude-pets install
 ```
+
+This updates `~/.claude/settings.json`. Restart Claude Code after installing hooks.
+
+Test it with OpenPets running:
+
+```bash
+bunx @open-pets/claude-pets test-event thinking
+```
+
+The pet should animate briefly, then return to idle.
 
 ## OpenCode status
 

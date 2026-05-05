@@ -1,17 +1,25 @@
 {
-  "name": "@openpets/pet-format-codex",
+  "name": "@open-pets/pet-format-codex",
   "version": "0.1.0",
-  "private": true,
-  "description": "Internal Codex/Petdex pet format loader for OpenPets.",
+  "description": "Codex/Petdex pet format loader for OpenPets.",
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
-    "@openpets/core": "workspace:*"
+    "@open-pets/core": "0.1.1"
   },
   "scripts": {
+    "build": "rm -rf dist && bunx tsc -p tsconfig.json",
+    "prepack": "bun run build",
     "test": "bun test",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit"
   },

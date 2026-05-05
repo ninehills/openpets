@@ -1,55 +1,115 @@
 <p align="center">
-  <img src="assets/openpets.png" alt="OpenPets — pixel art desktop pets for coding agents" width="100%" />
+  <img src="assets/openpets.png" alt="OpenPets - pixel art desktop pets for coding agents" width="100%" />
 </p>
 
 <h1 align="center">OpenPets</h1>
 
 <p align="center">
-  <strong>A tiny desktop pet for Claude, OpenCode, and your local dev tools.</strong>
+  <strong>A tiny desktop pet for Claude Code and coding agents.</strong>
 </p>
 
 <p align="center">
-  Agent progress, test runs, and coding state — visualized as a playful desktop companion.
+  See agent progress, test runs, and coding state as a playful desktop companion.
 </p>
 
 ---
 
-## Why OpenPets?
+## What is OpenPets?
 
-Coding agents are powerful, but they often feel invisible while they work. OpenPets gives them a small, friendly presence on your desktop.
+OpenPets is a desktop pet that reacts while Claude Code and other coding agents work.
 
-- **Local-first** — no cloud service, no accounts, no remote API.
-- **Agent-native** — MCP tools for Claude Code and future agents.
-- **Safe by default** — speech messages reject paths, commands, logs, URLs, secrets, and exact errors.
-- **No port drama** — local OS IPC instead of a fixed localhost HTTP port.
-- **Pet-pack friendly** — loads Codex/Petdex-style animated pet directories.
+- **Desktop companion** - a small pet that changes state while agents think, edit, test, and finish.
+- **Claude Code ready** - MCP tools let Claude launch, talk to, and control the pet.
+- **Automatic reactions** - pair with [Claude Pets](https://github.com/alvinunreal/claude-pets) for Claude Code hooks.
+- **Pet-pack friendly** - loads Codex/Petdex-style animated pet directories.
 
-```txt
-Claude / OpenCode / CLI
-        ↓ MCP or @openpets/client
-same-user OS IPC
-        ↓
-OpenPets desktop pet
+## Quick start
+
+Install the desktop app, connect it to Claude Code, then enable automatic Claude reactions.
+
+### 1. Install OpenPets desktop
+
+Download the latest app from [OpenPets Releases](https://github.com/alvinunreal/openpets/releases/latest):
+
+- **macOS Apple Silicon**: `OpenPets-*-arm64.dmg` or `OpenPets-*-arm64.zip`
+- **Windows**: `OpenPets-Setup-*-x64.exe`
+- **Linux**: `OpenPets-*-x86_64.AppImage` or `OpenPets-*-amd64.deb`
+
+Install or unzip it, then launch OpenPets. You should see the desktop pet and the OpenPets tray/menu-bar icon.
+
+> Current builds are unsigned. macOS or Windows may show a security warning the first time you open the app.
+
+If macOS says the app is damaged or should be moved to Trash, remove the quarantine flag and open it again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OpenPets.app
+open /Applications/OpenPets.app
 ```
 
-## Install
+### 2. Connect OpenPets to Claude Code
 
-OpenPets `0.1.0` is a desktop preview. macOS is the known-good baseline; Windows and Linux artifacts are preview-quality until native-host smoke testing is complete.
+Add the OpenPets MCP server:
 
-1. Download the latest artifact for your platform from GitHub Releases.
-2. Install or unzip it.
-3. Launch OpenPets. It appears in the menu bar/tray and shows the desktop pet.
+```bash
+claude mcp add -s user openpets -- bunx @open-pets/mcp
+```
 
-See [INSTALL.md](INSTALL.md) for Claude Code setup, unsigned-preview notes, and troubleshooting.
+Restart Claude Code, then confirm it is listed:
 
-## Agent integrations
+```bash
+claude mcp list
+```
 
-OpenPets is the desktop app and local IPC/MCP runtime. Use these companion packages for automatic agent status updates:
+### 3. Enable automatic Claude reactions
 
-- [Claude Pets](https://github.com/alvinunreal/claude-pets) — Claude Code hooks that update OpenPets while Claude works.
-- [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) — OpenCode plugin integration for OpenPets status updates.
+For automatic state changes while Claude works, install [Claude Pets](https://github.com/alvinunreal/claude-pets) hooks globally:
 
-## Developer quick start
+```bash
+bunx @open-pets/claude-pets install
+```
+
+Restart Claude Code. Claude activity will now update the pet automatically:
+
+- prompt submitted → thinking
+- file edits → editing
+- shell commands → running/testing
+- permission prompts → waving/waiting
+- completed/failure → success/error, then idle
+
+Test the integration:
+
+```bash
+bunx @open-pets/claude-pets test-event thinking
+```
+
+See [INSTALL.md](INSTALL.md) for platform notes and troubleshooting.
+
+## Claude Code integration
+
+OpenPets works best with Claude Code in two parts:
+
+1. **OpenPets MCP** - lets Claude intentionally launch, talk to, and control the pet.
+2. **[Claude Pets](https://github.com/alvinunreal/claude-pets)** - installs Claude Code hooks so the pet reacts automatically while Claude works.
+
+Install both for the full experience:
+
+```bash
+claude mcp add -s user openpets -- bunx @open-pets/mcp
+bunx @open-pets/claude-pets install
+```
+
+For setup details, troubleshooting, and hook behavior, see:
+
+https://github.com/alvinunreal/claude-pets
+
+## Integrations
+
+OpenPets is the desktop app. Use these companion integrations for automatic agent status updates:
+
+- [Claude Pets](https://github.com/alvinunreal/claude-pets) - Claude Code hooks that update OpenPets while Claude works.
+- [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) - OpenCode plugin integration for OpenPets status updates.
+
+## Development
 
 Use this if you are working from the source repo:
 
@@ -83,92 +143,7 @@ bun packages/cli/src/index.ts sleep
 bun packages/cli/src/index.ts quit
 ```
 
-## Claude Code setup
-
-For preview installs, add the MCP server to Claude Code:
-
-```bash
-claude mcp add -s user openpets -- bunx @openpets/mcp
-```
-
-If the MCP package has not been published yet, build OpenPets first:
-
-```bash
-bun run build
-```
-
-Add the MCP server to Claude Code:
-
-```bash
-claude mcp add -s user openpets -- bun /path/to/openpets/packages/mcp/dist/index.js
-```
-
-Example:
-
-```bash
-claude mcp add -s user openpets -- bun /Users/alvin/repos/pets/openpets/packages/mcp/dist/index.js
-```
-
-Restart Claude Code. Then Claude can use:
-
-| Tool | Purpose |
-| --- | --- |
-| `openpets_health` | Check if the desktop pet is reachable. |
-| `openpets_start` | Launch the local desktop pet if needed. |
-| `openpets_set_state` | Set status without speech. |
-| `openpets_say` | Send a short, safe progress message. |
-| `openpets_release` | Release this Claude session's lease without quitting shared pets. |
-
-Recommended agent flow:
-
-```txt
-openpets_health → openpets_start if needed → openpets_say occasionally
-```
-
-## Safe speech, not raw transcripts
-
-`openpets_say` is for short authored progress updates, not logs or transcripts.
-
-Good:
-
-```txt
-I’m mapping the moving parts.
-Running a quick check.
-I hit a snag and I’m checking why.
-That worked.
-```
-
-Rejected:
-
-```txt
-I’m editing src/auth/session.ts.
-Running npm test -- --token abc123.
-Error: Cannot read properties of undefined.
-Check https://example.com
-```
-
-The validator rejects file paths, shell commands, URLs, secrets/tokens, markdown/code blocks, logs, stack traces, exact errors, and long encoded strings.
-
-## Architecture
-
-OpenPets uses MCP for agent-facing tools and same-user OS IPC for local desktop communication.
-
-```txt
-packages/mcp      MCP stdio server for agents
-packages/client   IPC-only TypeScript client
-packages/core     event, reducer, state, IPC contracts
-packages/cli      local CLI
-apps/desktop      Electron overlay + IPC server
-```
-
-IPC endpoints:
-
-- macOS/Linux: Unix socket
-- Windows: named pipe
-
-There is intentionally **no** localhost HTTP integration API and **no** fixed port.
-
-## Development
+## Checks
 
 Run tests:
 
@@ -196,4 +171,4 @@ bun run dev:desktop
 
 ## Status
 
-OpenPets is early and local-first. The v0.1 target is a desktop preview with macOS as the known-good baseline, Windows/Linux preview artifacts after native-host smoke testing, Claude MCP support, and developer-oriented source workflows. Auto-update, signing polish, and a production CLI are later.
+OpenPets is available as a v0.1 desktop release for macOS, Windows, and Linux. Code signing and auto-update polish are planned for future releases.

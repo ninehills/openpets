@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from "react";
-import type { OpenPetsState } from "@openpets/core";
-import { codexStates, getCodexStateForOpenPetsState, type CodexStateId } from "@openpets/core";
+import type { OpenPetsState } from "@open-pets/core";
+import { codexStates, getCodexStateForOpenPetsState, type CodexStateId } from "@open-pets/core";
 import type { RendererPetState } from "../../preload";
 import "./styles.css";
 

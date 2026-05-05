@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
@@ -14,10 +14,10 @@ import {
   tickPetState,
   type LeaseParams,
   type OpenPetsEvent,
-} from "@openpets/core";
-import type { OpenPetsHealthV2, OpenPetsWindowAction } from "@openpets/core/ipc";
-import { getOpenPetsConfigPath, type OpenPetsConfig } from "@openpets/core/config";
-import { loadCodexPetDirectory, type LoadedCodexPet } from "@openpets/pet-format-codex";
+} from "@open-pets/core";
+import type { OpenPetsHealthV2, OpenPetsWindowAction } from "@open-pets/core/ipc";
+import { getOpenPetsConfigPath, getOpenPetsPetsDir, type OpenPetsConfig } from "@open-pets/core/config";
+import { loadCodexPetDirectory, type LoadedCodexPet } from "@open-pets/pet-format-codex";
 import { createDesktopIpcHandlers, startDesktopIpcServer, type DesktopIpcServerHandle } from "./ipc-server.js";
 
 const CODEX_FRAME_WIDTH = 192;
@@ -37,6 +37,7 @@ let mainWindow: BrowserWindow | null = null;
 let runtimeState = createInitialPetRuntimeState();
 let lifecycleState = createLifecycleLeaseState({ managed: false });
 let activePet: LoadedCodexPet | null = null;
+let installedPets: LoadedCodexPet[] = [];
 let config: OpenPetsConfig = {};
 let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 let ipcServerHandle: DesktopIpcServerHandle | null = null;
@@ -61,6 +62,7 @@ app.whenReady().then(async () => {
   debugLog("app ready", { argv: process.argv, debugMode });
   config = await loadConfig();
   await applyArgv(process.argv);
+  installedPets = await loadInstalledPets();
   await startLocalIpcServer();
   createTray();
   await createPetWindow();
@@ -212,6 +214,10 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
       enabled: false,
     },
     {
+      label: "Installed Pets",
+      submenu: createInstalledPetsSubmenu(),
+    },
+    {
       label: "Choose Pet…",
       click: () => void choosePetDirectory(),
     },
@@ -256,6 +262,20 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
       click: () => void handleWindowAction("quit"),
     },
   ];
+}
+
+function createInstalledPetsSubmenu(): MenuItemConstructorOptions[] {
+  if (installedPets.length === 0) {
+    return [{ label: "No installed pets yet", enabled: false }];
+  }
+
+  return installedPets.map((pet) => ({
+    label: pet.displayName || pet.id,
+    sublabel: pet.id,
+    type: "radio" as const,
+    checked: activePet?.directory === pet.directory,
+    click: () => void selectInstalledPet(pet.directory),
+  }));
 }
 
 function getTrayIcon() {
@@ -311,6 +331,7 @@ async function startLocalIpcServer() {
     applyEvent,
     handleWindowAction,
     handleLease,
+    selectPet,
   });
   try {
     ipcServerHandle = await startDesktopIpcServer({
@@ -332,7 +353,7 @@ function getIpcHealth(): OpenPetsHealthV2 {
     version: app.getVersion(),
     protocolVersion: 2,
     transport: "ipc",
-    capabilities: ["event-v2", "window-v1", "speech-v1", "lease-v1"],
+    capabilities: ["event-v2", "window-v1", "speech-v1", "lease-v1", "pet-v1"],
     ready: Boolean(mainWindow && rendererReady && activePet),
     activePet: activePet?.id ?? null,
     activeLeases: getActiveLeaseCount(lifecycleState),
@@ -469,7 +490,51 @@ async function choosePetDirectory() {
   activePet = loaded.pet;
   config = { ...config, petPath: activePet.directory };
   await saveConfig(config);
+  installedPets = await loadInstalledPets();
   publishState();
+}
+
+async function selectPet(params: { path: string }) {
+  const loaded = await loadCodexPetDirectory(resolve(params.path));
+  if (!loaded.ok) {
+    throw new Error(loaded.issues.map((item) => item.message).join("\n"));
+  }
+
+  activePet = loaded.pet;
+  config = { ...config, petPath: activePet.directory, hidden: false };
+  await saveConfig(config);
+  installedPets = await loadInstalledPets();
+  showPetWindow("select-pet");
+  publishState();
+  return {
+    pet: {
+      id: activePet.id,
+      displayName: activePet.displayName,
+      directory: activePet.directory,
+    },
+  };
+}
+
+async function selectInstalledPet(directory: string) {
+  await selectPet({ path: directory }).catch(async (error: unknown) => {
+    await dialog.showMessageBox({
+      type: "error",
+      title: "Could not switch pet",
+      message: error instanceof Error ? error.message : "OpenPets could not load that pet.",
+    });
+  });
+}
+
+async function loadInstalledPets() {
+  const petsDir = getOpenPetsPetsDir();
+  const entries = await readdir(petsDir, { withFileTypes: true }).catch(() => []);
+  const pets: LoadedCodexPet[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const loaded = await loadCodexPetDirectory(join(petsDir, entry.name));
+    if (loaded.ok) pets.push(loaded.pet);
+  }
+  return pets.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 async function useDefaultPet() {

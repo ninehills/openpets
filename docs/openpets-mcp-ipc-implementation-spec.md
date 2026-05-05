@@ -7,8 +7,8 @@ This spec turns `docs/openpets-mcp-ipc-rewrite-plan.md` into an implementation s
 ## Current Baseline
 
 - `apps/desktop/src/main.ts` starts an IPC server and no longer starts a localhost HTTP integration server.
-- `@openpets/client` is IPC-only and resolves `OPENPETS_IPC_ENDPOINT` / the default per-user IPC endpoint.
-- `packages/cli` uses `@openpets/client` over IPC for health, events, and window actions.
+- `@open-pets/client` is IPC-only and resolves `OPENPETS_IPC_ENDPOINT` / the default per-user IPC endpoint.
+- `packages/cli` uses `@open-pets/client` over IPC for health, events, and window actions.
 - `packages/core/src/ipc.ts` contains IPC protocol helpers and tests:
   - endpoint resolution
   - Unix parent directory safety checks
@@ -26,13 +26,13 @@ This spec turns `docs/openpets-mcp-ipc-rewrite-plan.md` into an implementation s
 - Unix socket setup must avoid symlink/race-prone behavior as much as practical in Node/Electron.
 - Speech messages from MCP must pass code-level safety validation; tool descriptions are not enough.
 
-## Phase 1 — IPC Protocol Foundation
+## Phase 1 - IPC Protocol Foundation
 
 Status: implemented.
 
 Deliverables:
 
-- Shared IPC types and helpers in `@openpets/core`.
+- Shared IPC types and helpers in `@open-pets/core`.
 - Endpoint resolution for Unix sockets and Windows named pipes.
 - Unix parent directory safety validation.
 - NDJSON frame serialization/parsing with 16 KiB max frame size.
@@ -50,7 +50,7 @@ Review gate:
 
 - Ask @oracle to review before Phase 2 work continues.
 
-## Phase 1.5 — IPC Safety Hardening Before Desktop Adoption
+## Phase 1.5 - IPC Safety Hardening Before Desktop Adoption
 
 Goal: harden the newly added IPC helpers before desktop startup depends on them.
 
@@ -88,7 +88,7 @@ Review gate:
 
 - Ask @oracle to review Phase 1.5 before implementing Phase 2.
 
-## Phase 2/3 — IPC-Only Desktop Server, Client Transport, CLI Switch, and HTTP Deletion
+## Phase 2/3 - IPC-Only Desktop Server, Client Transport, CLI Switch, and HTTP Deletion
 
 Goal: make the integration path IPC-only and delete the localhost HTTP integration transport entirely.
 
@@ -196,7 +196,7 @@ Review gate:
 
 - Ask @oracle to review IPC-only rewrite safety and stale-contract cleanup.
 
-## Phase 4 — MCP Package
+## Phase 4 - MCP Package
 
 Status: implemented.
 
@@ -275,7 +275,7 @@ Review gate:
 
 - Ask @oracle to review MCP trust boundaries, stdout hygiene, and safety validation strictness.
 
-## Phase 5 — Renderer Speech Lifetime and MCP Speech Enablement
+## Phase 5 - Renderer Speech Lifetime and MCP Speech Enablement
 
 Status: implemented.
 
@@ -300,7 +300,7 @@ Review gate:
 
 - Ask @oracle for code-structure review, and use @designer if visual/UX behavior feels off.
 
-## Phase 6 — Integration Repos + Docs Cleanup
+## Phase 6 - Integration Repos + Docs Cleanup
 
 Goal: make MCP the documented default for Claude/OpenCode while keeping hooks/plugins optional.
 

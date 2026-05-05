@@ -27,7 +27,7 @@ Implemented locally:
 - Desktop runs as a tray/menu-bar app and hides the macOS Dock icon.
 - Secure same-user IPC exists.
 - Lifecycle leases support shared agent ownership and `openpets_release`.
-- `@openpets/client` and `@openpets/mcp` build to `dist` and are versioned for `0.1.0`.
+- `@open-pets/client` and `@open-pets/mcp` build to `dist` and are versioned for `0.1.x`.
 - Claude Code can connect to the MCP server from a built checkout.
 - Tests/typechecks/build pass locally.
 
@@ -52,7 +52,7 @@ Pick this as the initial launch contract:
    - `openpets_say`
    - `openpets_release`
 
-Canonical MCP install path for v0.1: publish `@openpets/mcp@0.1.0` and document `bunx @openpets/mcp` / Claude Code setup. The desktop app is a prerequisite; MCP is not bundled into the desktop app in v0.1.
+Canonical MCP install path for v0.1: publish `@open-pets/mcp` and document `bunx @open-pets/mcp` / Claude Code setup. The desktop app is a prerequisite; MCP is not bundled into the desktop app in v0.1.
 
 ## P0 preview blockers
 
@@ -79,17 +79,17 @@ Required:
 
 Packages needing decisions:
 
-- `@openpets/core`
-- `@openpets/client`
-- `@openpets/mcp`
-- `@openpets/cli`
-- `@openpets/pet-format-codex`
-- `@openpets/desktop` app package
+- `@open-pets/core`
+- `@open-pets/client`
+- `@open-pets/mcp`
+- `@open-pets/cli`
+- `@open-pets/pet-format-codex`
+- `@open-pets/desktop` app package
 
 Recommendation for v0.1:
 
-- publish only what Claude setup needs, likely `@openpets/mcp` plus its required package dependencies
-- keep `@openpets/cli` developer-only unless its launcher is fixed
+- publish only what Claude setup needs, likely `@open-pets/mcp` plus its required package dependencies
+- keep `@open-pets/cli` developer-only unless its launcher is fixed
 
 ### 3. Package the desktop app
 
@@ -153,7 +153,7 @@ This is P0 if Claude Code setup is part of v0.1.
 
 ### 6. Define MCP distribution path
 
-If publishing `@openpets/mcp`:
+If publishing `@open-pets/mcp`:
 
 - set version to `0.1.0`
 - replace/resolve `workspace:*` dependencies
@@ -217,7 +217,7 @@ For every published package:
 
 Hidden package blocker:
 
-- `@openpets/pet-format-codex` must either become publishable or remain fully internal/bundled. It cannot be a hidden source-only dependency of a public package.
+- `@open-pets/pet-format-codex` must either become publishable or remain fully internal/bundled. It cannot be a hidden source-only dependency of a public package.
 
 ### 3. Release automation
 
@@ -273,7 +273,7 @@ Add:
 
 ## CLI decision
 
-`@openpets/cli` is not v0.1 user-facing unless fixed.
+`@open-pets/cli` is not v0.1 user-facing unless fixed.
 
 Current blockers:
 

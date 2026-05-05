@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import type { OpenPetsState } from "@openpets/core";
-import type { OpenPetsHealthV2 } from "@openpets/core/ipc";
-import { OpenPetsClientError } from "@openpets/client";
+import type { OpenPetsState } from "@open-pets/core";
+import type { OpenPetsHealthV2 } from "@open-pets/core/ipc";
+import { OpenPetsClientError } from "@open-pets/client";
 import { createMcpLeaseManager, openPetsHealthTool, openPetsReleaseTool, openPetsSayTool, openPetsSetStateTool, openPetsStartTool, type OpenPetsToolClient } from "./tools.js";
 import { createSpeechLimiter } from "./safety.js";
 

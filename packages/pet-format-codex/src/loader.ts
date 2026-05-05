@@ -1,8 +1,8 @@
 import { stat, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { codexStates } from "@openpets/core";
-import type { CodexPetManifest, LoadCodexPetResult, PetValidationIssue } from "./types";
-import { derivePetIdFromDirectory, parseManifestJson, sanitizeManifestString } from "./validation";
+import { codexStates } from "@open-pets/core";
+import type { CodexPetManifest, LoadCodexPetResult, PetValidationIssue } from "./types.js";
+import { derivePetIdFromDirectory, parseManifestJson, sanitizeManifestString } from "./validation.js";
 
 const spritesheetFileNames = ["spritesheet.webp", "spritesheet.png"] as const;
 const expectedSpritesheet = { width: 1536, height: 1872 } as const;

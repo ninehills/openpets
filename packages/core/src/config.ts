@@ -28,3 +28,7 @@ export function getOpenPetsConfigDir(env: NodeJS.ProcessEnv = process.env) {
 export function getOpenPetsConfigPath(env: NodeJS.ProcessEnv = process.env) {
   return join(getOpenPetsConfigDir(env), CONFIG_FILE_NAME);
 }
+
+export function getOpenPetsPetsDir(env: NodeJS.ProcessEnv = process.env) {
+  return join(getOpenPetsConfigDir(env), "pets");
+}

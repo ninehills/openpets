@@ -1,5 +1,5 @@
 import { createConnection } from "node:net";
-import { isOpenPetsState, type LeaseParams, type LeaseResult, type OpenPetsEvent, type OpenPetsLeaseClient, type OpenPetsState } from "@openpets/core";
+import { isOpenPetsState, type LeaseParams, type LeaseResult, type OpenPetsEvent, type OpenPetsLeaseClient, type OpenPetsState } from "@open-pets/core";
 import {
   getDefaultOpenPetsIpcEndpoint,
   isOpenPetsWindowAction,
@@ -11,7 +11,8 @@ import {
   type IpcResponse,
   type OpenPetsHealthV2,
   type OpenPetsWindowAction,
-} from "@openpets/core/ipc";
+  type SelectPetParams,
+} from "@open-pets/core/ipc";
 import { OpenPetsClientError } from "./errors.js";
 import { normalizeEventInput, type OpenPetsEventInput } from "./event-input.js";
 
@@ -41,6 +42,7 @@ export type OpenPetsClient = {
   sendEvent(event: OpenPetsEventInput, options?: OpenPetsClientOptions): Promise<{ ok: true; state: OpenPetsState }>;
   safeSendEvent(event: OpenPetsEventInput, options?: OpenPetsClientOptions): Promise<OpenPetsSafeResult>;
   windowAction(action: OpenPetsWindowAction, options?: OpenPetsClientOptions): Promise<{ ok: true; action: OpenPetsWindowAction }>;
+  selectPet(path: string, options?: OpenPetsClientOptions): Promise<{ ok: true; pet: { id: string; displayName: string; directory: string } }>;
   leaseAcquire(input: OpenPetsLeaseInput, options?: OpenPetsClientOptions): Promise<LeaseResult>;
   leaseHeartbeat(input: { id: string; ttlMs?: number }, options?: OpenPetsClientOptions): Promise<LeaseResult>;
   leaseRelease(id: string, options?: OpenPetsClientOptions): Promise<LeaseResult>;
@@ -100,6 +102,12 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     return validateLeaseResult(unwrapIpcResult(response));
   }
 
+  async function selectPetForClient(path: string, overrides: OpenPetsClientOptions = {}) {
+    const merged = mergedOptions(overrides);
+    const response = await requestIpc(merged.endpoint, { id: createRequestId("pet"), method: "pet", params: { path } satisfies SelectPetParams }, merged.timeoutMs ?? 2000);
+    return validateSelectPetResult(unwrapIpcResult(response));
+  }
+
   return {
     getHealth: getHealthForClient,
     async isRunning(overrides) {
@@ -113,6 +121,7 @@ export function createOpenPetsClient(options: OpenPetsClientOptions = {}): OpenP
     sendEvent: sendEventForClient,
     safeSendEvent: safeSendEventForClient,
     windowAction: windowActionForClient,
+    selectPet: selectPetForClient,
     leaseAcquire(input, overrides) {
       return leaseRequestForClient({ action: "acquire", ...input }, overrides);
     },
@@ -147,6 +156,10 @@ export function windowAction(action: OpenPetsWindowAction, options?: OpenPetsCli
   return defaultClient.windowAction(action, options);
 }
 
+export function selectPet(path: string, options?: OpenPetsClientOptions) {
+  return defaultClient.selectPet(path, options);
+}
+
 export function leaseAcquire(input: OpenPetsLeaseInput, options?: OpenPetsClientOptions) {
   return defaultClient.leaseAcquire(input, options);
 }
@@ -169,7 +182,7 @@ async function sendEventIpc(endpoint: string, event: OpenPetsEvent, timeoutMs: n
   return validateEventResult(unwrapIpcResult(response));
 }
 
-function requestIpc(endpoint: string, request: { id: string; method: "health" | "event" | "window" | "lease"; params?: unknown }, timeoutMs: number): Promise<IpcResponse> {
+function requestIpc(endpoint: string, request: { id: string; method: "health" | "event" | "window" | "lease" | "pet"; params?: unknown }, timeoutMs: number): Promise<IpcResponse> {
   return new Promise((resolve, reject) => {
     let settled = false;
     let buffer = Buffer.alloc(0);
@@ -253,7 +266,7 @@ function validateIpcHealth(input: unknown): OpenPetsHealthV2 {
     version: record.version,
     protocolVersion: OPENPETS_IPC_PROTOCOL_VERSION,
     transport: "ipc",
-    capabilities: Array.isArray(record.capabilities) ? record.capabilities.filter((item) => item === "event-v2" || item === "window-v1" || item === "speech-v1" || item === "lease-v1") : [],
+    capabilities: Array.isArray(record.capabilities) ? record.capabilities.filter((item) => item === "event-v2" || item === "window-v1" || item === "speech-v1" || item === "lease-v1" || item === "pet-v1") : [],
     ready: record.ready,
     activePet: typeof record.activePet === "string" ? record.activePet : null,
     activeLeases: typeof record.activeLeases === "number" && Number.isFinite(record.activeLeases) ? record.activeLeases : 0,
@@ -275,6 +288,18 @@ function validateWindowActionResult(input: unknown): { ok: true; action: OpenPet
   const record = input as Record<string, unknown>;
   if (!isOpenPetsWindowAction(record.action)) throw new OpenPetsClientError("invalid-response", "OpenPets window response is missing action");
   return { ok: true, action: record.action };
+}
+
+function validateSelectPetResult(input: unknown): { ok: true; pet: { id: string; displayName: string; directory: string } } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new OpenPetsClientError("invalid-response", "OpenPets pet response must be an object");
+  const record = input as Record<string, unknown>;
+  const pet = record.pet;
+  if (!pet || typeof pet !== "object" || Array.isArray(pet)) throw new OpenPetsClientError("invalid-response", "OpenPets pet response is missing pet");
+  const petRecord = pet as Record<string, unknown>;
+  if (typeof petRecord.id !== "string" || typeof petRecord.displayName !== "string" || typeof petRecord.directory !== "string") {
+    throw new OpenPetsClientError("invalid-response", "OpenPets pet response is invalid");
+  }
+  return { ok: true, pet: { id: petRecord.id, displayName: petRecord.displayName, directory: petRecord.directory } };
 }
 
 function validateLeaseResult(input: unknown): LeaseResult {

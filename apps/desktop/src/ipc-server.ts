@@ -4,18 +4,20 @@ import {
   type IpcDispatcherHandlers,
   type OpenPetsHealthV2,
   type OpenPetsWindowAction,
+  type SelectPetParams,
   ensureSafeIpcParentDirectory,
   getDefaultOpenPetsIpcEndpoint,
   handleIpcSocket,
   inspectIpcEndpoint,
-} from "@openpets/core/ipc";
-import type { LeaseParams, OpenPetsEvent } from "@openpets/core";
+} from "@open-pets/core/ipc";
+import type { LeaseParams, OpenPetsEvent } from "@open-pets/core";
 
 export type DesktopIpcHandlerContext = {
   getHealth(): OpenPetsHealthV2;
   applyEvent(event: OpenPetsEvent): void;
   handleWindowAction(action: OpenPetsWindowAction): void | Promise<void>;
   handleLease(params: LeaseParams): unknown;
+  selectPet(params: SelectPetParams): unknown | Promise<unknown>;
 };
 
 export type DesktopIpcServerHandle = {
@@ -35,6 +37,7 @@ export function createDesktopIpcHandlers(context: DesktopIpcHandlerContext): Ipc
       return { action };
     },
     lease: (params) => context.handleLease(params),
+    pet: (params) => context.selectPet(params),
   };
 }
 

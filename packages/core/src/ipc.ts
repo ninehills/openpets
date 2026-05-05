@@ -10,8 +10,9 @@ export const MAX_IPC_ID_LENGTH = 80;
 export const DEFAULT_IPC_TIMEOUT_MS = 1000;
 export const SAFE_IPC_TIMEOUT_MS = 400;
 
-export type OpenPetsIpcMethod = "health" | "event" | "window" | "lease";
+export type OpenPetsIpcMethod = "health" | "event" | "window" | "lease" | "pet";
 export type OpenPetsWindowAction = "show" | "hide" | "sleep" | "quit";
+export type SelectPetParams = { path: string };
 
 export type IpcRequest = {
   id: string;
@@ -38,7 +39,7 @@ export type OpenPetsHealthV2 = {
   version: string;
   protocolVersion: 2;
   transport: "ipc";
-  capabilities: Array<"event-v2" | "window-v1" | "speech-v1" | "lease-v1">;
+  capabilities: Array<"event-v2" | "window-v1" | "speech-v1" | "lease-v1" | "pet-v1">;
   ready: boolean;
   activePet: string | null;
   activeLeases: number;
@@ -51,13 +52,15 @@ export type ValidatedIpcRequest =
   | { id: string; method: "health"; params: undefined }
   | { id: string; method: "event"; params: OpenPetsEvent }
   | { id: string; method: "window"; params: { action: OpenPetsWindowAction } }
-  | { id: string; method: "lease"; params: LeaseParams };
+  | { id: string; method: "lease"; params: LeaseParams }
+  | { id: string; method: "pet"; params: SelectPetParams };
 
 export type IpcDispatcherHandlers = {
   health(): unknown | Promise<unknown>;
   event(event: OpenPetsEvent): unknown | Promise<unknown>;
   window(action: OpenPetsWindowAction): unknown | Promise<unknown>;
   lease?(params: LeaseParams): unknown | Promise<unknown>;
+  pet?(params: SelectPetParams): unknown | Promise<unknown>;
 };
 
 export type IpcEndpointOptions = {
@@ -263,7 +266,7 @@ export function validateIpcRequest(input: unknown): { ok: true; request: Validat
     return { ok: false, id, code: "invalid-request", message: `id must be a non-empty string <= ${MAX_IPC_ID_LENGTH} chars` };
   }
 
-  if (record.method !== "health" && record.method !== "event" && record.method !== "window" && record.method !== "lease") {
+  if (record.method !== "health" && record.method !== "event" && record.method !== "window" && record.method !== "lease" && record.method !== "pet") {
     return { ok: false, id, code: typeof record.method === "string" ? "unknown-method" : "invalid-request", message: "Unknown IPC method" };
   }
 
@@ -290,6 +293,15 @@ export function validateIpcRequest(input: unknown): { ok: true; request: Validat
     return { ok: true, request: { id, method: "lease", params: validation.params } };
   }
 
+  if (record.method === "pet") {
+    const params = record.params;
+    const path = params && typeof params === "object" && !Array.isArray(params) ? (params as Record<string, unknown>).path : undefined;
+    if (typeof path !== "string" || !path.trim()) {
+      return { ok: false, id, code: "invalid-params", message: "pet params must include a path" };
+    }
+    return { ok: true, request: { id, method: "pet", params: { path: path.trim() } } };
+  }
+
   const params = record.params;
   if (!params || typeof params !== "object" || Array.isArray(params) || !isOpenPetsWindowAction((params as Record<string, unknown>).action)) {
     return { ok: false, id, code: "invalid-params", message: "window params must include a valid action" };
@@ -312,6 +324,10 @@ export async function dispatchIpcRequest(input: unknown, handlers: IpcDispatcher
     if (request.method === "lease") {
       if (!handlers.lease) return createIpcErrorResponse(request.id, "unknown-method", "Unknown IPC method");
       return { id: request.id, ok: true, result: await handlers.lease(request.params) };
+    }
+    if (request.method === "pet") {
+      if (!handlers.pet) return createIpcErrorResponse(request.id, "unknown-method", "Unknown IPC method");
+      return { id: request.id, ok: true, result: await handlers.pet(request.params) };
     }
     return { id: request.id, ok: true, result: await handlers.window(request.params.action) };
   } catch (error) {

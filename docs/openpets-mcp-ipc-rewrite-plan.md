@@ -9,8 +9,8 @@ Target architecture:
 ```txt
 Claude / OpenCode / future agents
         ↓ MCP stdio
-@openpets/mcp
-        ↓ @openpets/client transport abstraction
+@open-pets/mcp
+        ↓ @open-pets/client transport abstraction
 Unix domain socket / Windows named pipe
         ↓
 OpenPets desktop main process
@@ -28,8 +28,8 @@ No backwards compatibility is required for old integration commands or fixed loc
   - macOS/Linux: Unix domain socket
   - Windows: named pipe
 - Keep the OpenPets event model and desktop renderer behavior.
-- Make `@openpets/client` transport-agnostic.
-- Make `@openpets/mcp` the preferred agent integration surface.
+- Make `@open-pets/client` transport-agnostic.
+- Make `@open-pets/mcp` the preferred agent integration surface.
 - Keep Claude/OpenCode hook/plugin status mapping as optional secondary adapters, not the primary agent UX.
 
 ## Non-goals
@@ -107,7 +107,7 @@ Owns:
 
 Desktop should no longer start a public HTTP server by default.
 
-### `@openpets/client`
+### `@open-pets/client`
 
 Owns:
 
@@ -121,7 +121,7 @@ Primary transport should be IPC.
 
 HTTP integration transport is deleted entirely. Do not retain a dev fallback or compatibility shim.
 
-### `@openpets/mcp`
+### `@open-pets/mcp`
 
 Owns:
 
@@ -141,7 +141,7 @@ Owns:
 - manual `openpets event <state>` for shell demos
 - `openpets mcp` convenience command, if we want CLI to launch the MCP package
 
-The CLI should use `@openpets/client` over IPC.
+The CLI should use `@open-pets/client` over IPC.
 
 ## IPC transport design
 
@@ -309,7 +309,7 @@ Desktop should start the IPC server early in the main process, before renderer r
 - desktop booting
 - desktop ready
 
-## `@openpets/client` rewrite
+## `@open-pets/client` rewrite
 
 ### Public API
 
@@ -346,7 +346,7 @@ OPENPETS_IPC_ENDPOINT
 
 Do not keep `OPENPETS_BASE_URL` or any HTTP URL environment variable.
 
-## `@openpets/mcp` design
+## `@open-pets/mcp` design
 
 ### Package files
 
@@ -563,7 +563,7 @@ If OpenCode supports MCP tools cleanly, prefer MCP for authored speech.
 No backwards compatibility required. During implementation:
 
 - delete HTTP server code from desktop if IPC fully replaces it
-- delete HTTP default from `@openpets/client`
+- delete HTTP default from `@open-pets/client`
 - update docs/contracts to remove fixed port as primary contract
 - rewrite tests around IPC protocol
 - keep only intentional dev fallback code, clearly marked and not default
@@ -596,12 +596,12 @@ This phase lands atomically with the HTTP integration path deleted after IPC cli
 ### Phase 3: Delete HTTP integration transport
 
 - Prefer deleting desktop HTTP server entirely.
-- HTTP must not be default in `@openpets/client`.
+- HTTP must not be default in `@open-pets/client`.
 - Update docs/contracts to remove fixed port as primary contract.
 
 ### Phase 4: MCP package
 
-- Add `@openpets/mcp`.
+- Add `@open-pets/mcp`.
 - Implement stdio MCP server.
 - Implement `openpets_say`, `openpets_set_state`, `openpets_health`.
 - Add safety tests.
@@ -624,7 +624,7 @@ This phase lands atomically with the HTTP integration path deleted after IPC cli
 
 - HTTP deletion decision: delete immediately; do not keep a debug fallback.
 - Should `openpets start` create the IPC endpoint before renderer loads, or only after renderer ready?
-- Should `openpets mcp` live in `packages/cli` as a wrapper or only in `@openpets/mcp`?
+- Should `openpets mcp` live in `packages/cli` as a wrapper or only in `@open-pets/mcp`?
 - How exactly should Claude Code project MCP config be written and merged safely?
 - Does OpenCode support MCP tools in the desired workflow, or only plugins?
 - How strict should speech safety validation be by default?

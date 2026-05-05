@@ -215,7 +215,7 @@ New desktop implementations should always emit `activeLeases` and `managed`. Cli
 
 ## Client API changes
 
-Add lifecycle methods to `@openpets/client`:
+Add lifecycle methods to `@open-pets/client`:
 
 ```ts
 type OpenPetsLeaseClient = "mcp" | "opencode" | "cli";

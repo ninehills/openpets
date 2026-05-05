@@ -1,4 +1,4 @@
-import type { CodexState } from "@openpets/core";
+import type { CodexState } from "@open-pets/core";
 
 export type CodexPetManifest = {
   id?: string;

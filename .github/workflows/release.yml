@@ -78,7 +78,7 @@ jobs:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: OpenPets ${{ github.event.inputs.tag || github.ref_name }}
           draft: false
-          prerelease: true
+          prerelease: false
           generate_release_notes: true
           files: |
             release/desktop/*.dmg

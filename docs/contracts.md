@@ -7,8 +7,8 @@ OpenPets uses MCP for agent-authored updates and same-user OS IPC for local desk
 ```txt
 Claude / OpenCode / future agents
         ↓ MCP stdio
-@openpets/mcp
-        ↓ @openpets/client
+@open-pets/mcp
+        ↓ @open-pets/client
 Unix socket / Windows named pipe
         ↓
 OpenPets desktop main process
@@ -130,9 +130,9 @@ Response result:
 { "action": "show" }
 ```
 
-## `@openpets/client`
+## `@open-pets/client`
 
-`@openpets/client` is IPC-only.
+`@open-pets/client` is IPC-only.
 
 ```ts
 type OpenPetsClientOptions = {
@@ -148,7 +148,7 @@ Environment:
 OPENPETS_IPC_ENDPOINT
 ```
 
-## `@openpets/mcp`
+## `@open-pets/mcp`
 
 MCP runs over stdio. Stdout is MCP protocol only; diagnostics go to stderr.
 
@@ -165,7 +165,7 @@ Renderer speech is transient: about 4s normally, about 5s for success/error. Sta
 
 ## CLI
 
-The CLI uses `@openpets/client` over IPC.
+The CLI uses `@open-pets/client` over IPC.
 
 ```txt
 openpets start [--pet ./examples/pets/slayer] [--scale 1] [--debug]
@@ -173,4 +173,4 @@ openpets event <state> [--source cli] [--message text] [--tool tool] [--type typ
 openpets show|hide|sleep|quit
 ```
 
-Agent integration should prefer MCP via `openpets-mcp` / `@openpets/mcp`.
+Agent integration should prefer MCP via `openpets-mcp` / `@open-pets/mcp`.

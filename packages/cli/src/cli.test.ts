@@ -28,7 +28,7 @@ describe("CLI black-box tests", () => {
     const result = await runCli(["help"]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain("bunx claude-pets install");
+    expect(result.stdout).toContain("bunx @open-pets/claude-pets install");
     expect(result.stdout).toContain("bunx opencode-pets install");
     expect(result.stdout).not.toContain("openpets hook claude-code");
   });

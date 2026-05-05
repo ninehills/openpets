@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { handleIpcSocket, type IpcDispatcherHandlers } from "@openpets/core/ipc";
+import { handleIpcSocket, type IpcDispatcherHandlers } from "@open-pets/core/ipc";
 import { createOpenPetsClient, safeSendEvent, sendEvent } from "./client.js";
 import { OpenPetsClientError } from "./errors.js";
 
@@ -15,7 +15,7 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-describe("@openpets/client IPC", () => {
+describe("@open-pets/client IPC", () => {
   it("gets health from OpenPets over IPC", async () => {
     const endpoint = await startIpcServer({ health: () => validHealth(), event: () => ({}), window: () => ({}), lease: () => ({}) });
     const client = createOpenPetsClient({ endpoint });

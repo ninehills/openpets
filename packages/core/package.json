@@ -1,6 +1,6 @@
 {
-  "name": "@openpets/core",
-  "version": "0.1.0",
+  "name": "@open-pets/core",
+  "version": "0.1.1",
   "description": "Core event, reducer, lifecycle, and IPC contracts for OpenPets.",
   "license": "MIT",
   "type": "module",

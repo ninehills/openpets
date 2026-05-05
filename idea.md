@@ -96,7 +96,7 @@ bun test && openpets event success || openpets event error
 
 Useful for apps, editor extensions, and local tools running as the same user.
 
-The supported programmatic surface is `@openpets/client` over OS IPC. There is no localhost HTTP integration API.
+The supported programmatic surface is `@open-pets/client` over OS IPC. There is no localhost HTTP integration API.
 
 ```json
 {
@@ -131,7 +131,7 @@ socket.send(JSON.stringify({
 
 Possible packages:
 
-- `@openpets/sdk`
+- `@open-pets/sdk`
 - `openpets-python`
 - GitHub Action
 - VS Code/Cursor extension

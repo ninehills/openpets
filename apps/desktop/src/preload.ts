@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { OpenPetsEvent, OpenPetsState } from "@openpets/core";
-import type { LoadedCodexPet } from "@openpets/pet-format-codex";
+import type { OpenPetsEvent, OpenPetsState } from "@open-pets/core";
+import type { LoadedCodexPet } from "@open-pets/pet-format-codex";
 
 export type RendererPetState = {
   state: OpenPetsState;

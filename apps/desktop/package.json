@@ -1,6 +1,6 @@
 {
-  "name": "@openpets/desktop",
-  "version": "0.1.0",
+  "name": "@open-pets/desktop",
+  "version": "0.1.1",
   "private": true,
   "description": "OpenPets desktop tray app.",
   "license": "MIT",
@@ -23,8 +23,8 @@
     "typecheck": "bunx tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@openpets/core": "workspace:*",
-    "@openpets/pet-format-codex": "workspace:*",
+    "@open-pets/core": "workspace:*",
+    "@open-pets/pet-format-codex": "workspace:*",
     "@vitejs/plugin-react": "^5.1.1",
     "vite": "^7.2.7",
     "react": "^19.2.3",

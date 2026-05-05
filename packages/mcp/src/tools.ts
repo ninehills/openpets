@@ -1,7 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createOpenPetsClient, OpenPetsClientError, type OpenPetsClient } from "@openpets/client";
-import { isOpenPetsState, openPetsStates, type OpenPetsState } from "@openpets/core";
+import { createOpenPetsClient, OpenPetsClientError, type OpenPetsClient } from "@open-pets/client";
+import { isOpenPetsState, openPetsStates, type OpenPetsState } from "@open-pets/core";
 import * as z from "zod/v4";
 import { launchOpenPetsDesktop, sleep, type DesktopLauncher } from "./launcher.js";
 import { createSpeechLimiter, validateSpeechMessage, type SpeechLimiter } from "./safety.js";
