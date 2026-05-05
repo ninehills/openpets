@@ -23,6 +23,11 @@ OpenPets is a desktop pet that reacts while Claude Code and other coding agents 
 - **Automatic reactions** - pair with [Claude Pets](https://github.com/alvinunreal/claude-pets) for Claude Code hooks.
 - **Pet-pack friendly** - loads Codex/Petdex-style animated pet directories.
 
+
+https://github.com/user-attachments/assets/fbad0d58-8040-4ebb-a26b-73fa497a4ceb
+
+
+
 ## Quick start
 
 Install the desktop app, connect it to Claude Code, then enable automatic Claude reactions.
