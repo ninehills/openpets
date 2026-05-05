@@ -4,7 +4,11 @@
   "private": true,
   "description": "OpenPets desktop tray app.",
   "license": "MIT",
-  "author": "Alvin",
+  "author": {
+    "name": "Alvin",
+    "email": "alvin@boringdystopia.ai"
+  },
+  "homepage": "https://github.com/alvinunreal/openpets",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {

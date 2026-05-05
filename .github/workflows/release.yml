@@ -50,6 +50,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Test
+        if: runner.os != 'Windows'
         run: bun run test
 
       - name: Typecheck

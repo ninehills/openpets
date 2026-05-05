@@ -52,6 +52,7 @@ portable:
 linux:
   icon: build/icon.png
   category: Utility
+  maintainer: Alvin <alvin@boringdystopia.ai>
   target:
     - target: AppImage
       arch:
