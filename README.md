@@ -42,6 +42,13 @@ OpenPets `0.1.0` is a desktop preview. macOS is the known-good baseline; Windows
 
 See [INSTALL.md](INSTALL.md) for Claude Code setup, unsigned-preview notes, and troubleshooting.
 
+## Agent integrations
+
+OpenPets is the desktop app and local IPC/MCP runtime. Use these companion packages for automatic agent status updates:
+
+- [Claude Pets](https://github.com/alvinunreal/claude-pets) — Claude Code hooks that update OpenPets while Claude works.
+- [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) — OpenCode plugin integration for OpenPets status updates.
+
 ## Developer quick start
 
 Use this if you are working from the source repo:
