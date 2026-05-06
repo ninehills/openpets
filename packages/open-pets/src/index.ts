@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { installAndActivatePet } from "@open-pets/installer";
 
-const DEFAULT_CATALOG_URL = "https://openpets.dev/pets/install.json";
+export const DEFAULT_CATALOG_URL = "https://openpets.dev/pets/install.json";
 const CATALOG_FETCH_TIMEOUT_MS = 10_000;
 const MAX_CATALOG_BYTES = 1024 * 1024;
 const INSTALL_ID_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
@@ -143,22 +143,66 @@ export function validateCatalog(value: unknown): { ok: true; catalog: InstallCat
   return { ok: true, catalog: { version: 1, generatedAt: value.generatedAt, pets } };
 }
 
+const ALLOWED_ZIP_ORIGIN = "https://zip.openpets.dev";
+const ALLOWED_CATALOG_ORIGIN = "https://openpets.dev";
+
 export function resolveZipUrl(zipPath: string, catalogUrl: string) {
-  if (!zipPath.startsWith("/pets/") || !zipPath.endsWith(".zip")) return new Error("Install catalog contains an unsafe pet zip path.");
-  if (zipPath.includes("?") || zipPath.includes("#") || zipPath.includes("\\")) return new Error("Install catalog contains an unsafe pet zip path.");
+  // Check for dangerous characters in all cases
+  if (zipPath.includes("?") || zipPath.includes("#") || zipPath.includes("\\")) {
+    return new Error("Install catalog contains an unsafe pet zip path.");
+  }
+
   let decoded: string;
   try {
     decoded = decodeURIComponent(zipPath);
   } catch {
     return new Error("Install catalog contains an unsafe pet zip path.");
   }
-  if (decoded.includes("..") || decoded.includes("\\")) return new Error("Install catalog contains an unsafe pet zip path.");
+  if (decoded.includes("..") || decoded.includes("\\")) {
+    return new Error("Install catalog contains an unsafe pet zip path.");
+  }
+
+  // Handle absolute URLs (R2 zip URLs)
+  if (zipPath.startsWith("https://")) {
+    let url: URL;
+    try {
+      url = new URL(zipPath);
+    } catch {
+      return new Error("Install catalog contains an unsafe pet zip path.");
+    }
+    // Must be HTTPS
+    if (url.protocol !== "https:") {
+      return new Error("Install catalog contains an unsafe pet zip path.");
+    }
+    // Must be from allowed origin
+    if (url.origin !== ALLOWED_ZIP_ORIGIN) {
+      return new Error("Install catalog contains an unsafe pet zip origin.");
+    }
+    // Must end with .zip
+    if (!url.pathname.endsWith(".zip")) {
+      return new Error("Install catalog contains an unsafe pet zip path.");
+    }
+    // Must be under /pets/
+    if (!url.pathname.startsWith("/pets/")) {
+      return new Error("Install catalog contains an unsafe pet zip path.");
+    }
+    return url;
+  }
+
+  // Handle relative paths (legacy)
+  if (!zipPath.startsWith("/pets/") || !zipPath.endsWith(".zip")) {
+    return new Error("Install catalog contains an unsafe pet zip path.");
+  }
 
   const catalog = validateCatalogUrl(catalogUrl);
   if (catalog instanceof Error) return catalog;
   const resolved = new URL(zipPath, catalog);
-  if (resolved.origin !== catalog.origin || resolved.protocol !== catalog.protocol) return new Error("Install catalog contains a cross-origin pet zip path.");
-  if (catalog.href === DEFAULT_CATALOG_URL && resolved.origin !== "https://openpets.dev") return new Error("Install catalog contains an unsafe pet zip origin.");
+  if (resolved.origin !== catalog.origin || resolved.protocol !== catalog.protocol) {
+    return new Error("Install catalog contains a cross-origin pet zip path.");
+  }
+  if (catalog.href === DEFAULT_CATALOG_URL && resolved.origin !== ALLOWED_CATALOG_ORIGIN) {
+    return new Error("Install catalog contains an unsafe pet zip origin.");
+  }
   return resolved;
 }
 
