@@ -5,7 +5,7 @@
 <h1 align="center">OpenPets</h1>
 
 <p align="center">
-  <strong>A tiny desktop pet for Claude Code and coding agents.</strong>
+  <strong>A tiny desktop pet for coding agents.</strong>
 </p>
 
 <p align="center">
@@ -16,12 +16,12 @@
 
 ## What is OpenPets?
 
-OpenPets is a desktop pet that reacts while Claude Code and other coding agents work.
+OpenPets is a desktop pet that reacts while coding agents work.
 
 - **Desktop companion** - a small pet that changes state while agents think, edit, test, and finish.
-- **Claude Code ready** - MCP tools let Claude launch, talk to, and control the pet.
-- **Automatic reactions** - pair with [Claude Pets](https://github.com/alvinunreal/claude-pets) for Claude Code hooks.
-- **Pet-pack friendly** - loads Codex/Petdex-style animated pet directories.
+- **MCP ready** - agents can launch, talk to, and control the pet through the OpenPets MCP server.
+- **Integration friendly** - use MCP, the TypeScript client, or companion integrations for automatic status updates.
+- **Pet-pack friendly** - loads Codex style animated pet directories.
 
 
 https://github.com/user-attachments/assets/fbad0d58-8040-4ebb-a26b-73fa497a4ceb
@@ -30,13 +30,14 @@ https://github.com/user-attachments/assets/fbad0d58-8040-4ebb-a26b-73fa497a4ceb
 
 ## Quick start
 
-Install the desktop app, connect it to Claude Code, then enable automatic Claude reactions.
+Install the desktop app, then connect your coding agent.
 
 ### 1. Install OpenPets desktop
 
 Download the latest app from [OpenPets Releases](https://github.com/alvinunreal/openpets/releases/latest):
 
 - **macOS Apple Silicon**: `OpenPets-*-arm64.dmg` or `OpenPets-*-arm64.zip`
+- **macOS Intel**: `OpenPets-*-x64.dmg` or `OpenPets-*-x64.zip`
 - **Windows**: `OpenPets-Setup-*-x64.exe`
 - **Linux**: `OpenPets-*-x86_64.AppImage` or `OpenPets-*-amd64.deb`
 
@@ -51,129 +52,113 @@ xattr -dr com.apple.quarantine /Applications/OpenPets.app
 open /Applications/OpenPets.app
 ```
 
-### 2. Connect OpenPets to Claude Code
-
-Add the OpenPets MCP server:
-
-```bash
-claude mcp add -s user openpets -- bunx @open-pets/mcp
-```
-
-Restart Claude Code, then confirm it is listed:
-
-```bash
-claude mcp list
-```
-
-### 3. Enable automatic Claude reactions
-
-For automatic state changes while Claude works, install [Claude Pets](https://github.com/alvinunreal/claude-pets) hooks globally:
-
-```bash
-bunx @open-pets/claude-pets install
-```
-
-Restart Claude Code. Claude activity will now update the pet automatically:
-
-- prompt submitted → thinking
-- file edits → editing
-- shell commands → running/testing
-- permission prompts → waving/waiting
-- completed/failure → success/error, then idle
-
-Test the integration:
-
-```bash
-bunx @open-pets/claude-pets test-event thinking
-```
-
 See [INSTALL.md](INSTALL.md) for platform notes and troubleshooting.
 
-## Claude Code integration
+### 2. Connect your agent
 
-OpenPets works best with Claude Code in two parts:
+Use the companion integration for your agent when one exists:
 
-1. **OpenPets MCP** - lets Claude intentionally launch, talk to, and control the pet.
-2. **[Claude Pets](https://github.com/alvinunreal/claude-pets)** - installs Claude Code hooks so the pet reacts automatically while Claude works.
+- **Claude Code**: install [Claude Pets](https://github.com/alvinunreal/claude-pets) for Claude hooks and OpenPets setup.
+- **OpenCode**: install [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) for OpenCode plugin integration.
 
-Install both for the full experience:
+For Cursor, VS Code, Windsurf, or any other MCP-capable agent, configure the OpenPets MCP server directly. See [MCP integration](#mcp-integration) for copy-paste JSON and commands.
 
-```bash
-claude mcp add -s user openpets -- bunx @open-pets/mcp
-bunx @open-pets/claude-pets install
+## MCP integration
+
+The OpenPets MCP server lets agents control the desktop pet over the Model Context Protocol.
+
+```json
+{
+  "mcpServers": {
+    "openpets": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["@open-pets/mcp"]
+    }
+  }
+}
 ```
 
-For setup details, troubleshooting, and hook behavior, see:
+Once connected, an agent can use OpenPets tools to start the desktop app, check health, set pet states, show short speech bubbles, and release its session.
 
-https://github.com/alvinunreal/claude-pets
+### Setup examples
 
-## Integrations
+<details>
+<summary>Cursor</summary>
 
-OpenPets is the desktop app. Use these companion integrations for automatic agent status updates:
+Add this to `~/.cursor/mcp.json` for global setup, or `.cursor/mcp.json` inside a project:
 
-- [Claude Pets](https://github.com/alvinunreal/claude-pets) - Claude Code hooks that update OpenPets while Claude works.
-- [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) - OpenCode plugin integration for OpenPets status updates.
-
-## Development
-
-Use this if you are working from the source repo:
-
-```bash
-git clone https://github.com/alvinunreal/openpets.git
-cd openpets
-bun install
-bun run build
+```json
+{
+  "mcpServers": {
+    "openpets": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["@open-pets/mcp"]
+    }
+  }
+}
 ```
 
-Start the desktop pet:
+Restart Cursor after changing MCP config.
 
-```bash
-bun packages/cli/src/index.ts start
+</details>
+
+<details>
+<summary>VS Code / GitHub Copilot</summary>
+
+Add this to `.vscode/mcp.json` for a workspace setup:
+
+```json
+{
+  "servers": {
+    "openpets": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["@open-pets/mcp"]
+    }
+  }
+}
 ```
 
-Send it a state:
+Or add it to your user profile from the command line:
 
 ```bash
-bun packages/cli/src/index.ts event thinking --message "Planning the next step"
-bun packages/cli/src/index.ts event testing
-bun packages/cli/src/index.ts event success --message "That worked"
+code --add-mcp '{"name":"openpets","command":"bunx","args":["@open-pets/mcp"]}'
 ```
 
-Control the window:
+VS Code uses `servers` as the root key, not `mcpServers`.
 
-```bash
-bun packages/cli/src/index.ts show
-bun packages/cli/src/index.ts hide
-bun packages/cli/src/index.ts sleep
-bun packages/cli/src/index.ts quit
+</details>
+
+<details>
+<summary>Windsurf</summary>
+
+Add this to `~/.codeium/windsurf/mcp_config.json` on macOS/Linux, or `%USERPROFILE%\.codeium\windsurf\mcp_config.json` on Windows:
+
+```json
+{
+  "mcpServers": {
+    "openpets": {
+      "command": "bunx",
+      "args": ["@open-pets/mcp"]
+    }
+  }
+}
 ```
 
-## Checks
+Fully quit and reopen Windsurf after changing MCP config.
 
-Run tests:
+</details>
 
-```bash
-bun test packages/core/src packages/client/src packages/cli/src packages/mcp/src
-```
+## Available tools:
 
-Typecheck everything:
+- `openpets_health` - check whether the desktop app is reachable.
+- `openpets_start` - launch OpenPets and acquire an agent session.
+- `openpets_say` - show a short speech bubble and optional pet state.
+- `openpets_set_state` - update the pet state without speech.
+- `openpets_release` - release the agent session.
 
-```bash
-bun run typecheck
-```
+Supported states include `thinking`, `working`, `editing`, `running`, `testing`, `waiting`, `success`, and `error`.
 
-Build everything:
-
-```bash
-bun run build
-```
-
-Run the desktop in dev mode:
-
-```bash
-bun run dev:desktop
-```
-
-## Status
-
-OpenPets is available as a v0.1 desktop release for macOS, Windows, and Linux. Code signing and auto-update polish are planned for future releases.
+The MCP server talks to the local OpenPets desktop app through the same local IPC client used by other integrations. Speech is intentionally short and validated before it appears on screen.
