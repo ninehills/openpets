@@ -1,6 +1,6 @@
 {
   "name": "@open-pets/desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "OpenPets desktop tray app.",
   "license": "MIT",
@@ -15,7 +15,7 @@
     "dev": "bun run build:main && bun run build:preload && bunx vite --host 127.0.0.1",
     "start": "bun run build && bunx electron dist/main.js",
     "build": "bun run build:main && bun run build:preload && bunx vite build",
-    "package:mac": "bun run build && bunx electron-builder --mac --arm64 --config electron-builder.yml",
+    "package:mac": "bun run build && bunx electron-builder --mac --config electron-builder.yml",
     "package:win": "bun run build && bunx electron-builder --win --x64 --config electron-builder.yml",
     "package:linux": "bun run build && bunx electron-builder --linux --x64 --config electron-builder.yml",
     "build:main": "bun build src/main.ts --target=node --external electron --outdir dist",

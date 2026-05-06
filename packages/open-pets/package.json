@@ -1,0 +1,30 @@
+{
+  "name": "install-pet",
+  "version": "0.1.1",
+  "description": "Clean one-command pet installs for OpenPets.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "install-pet": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@open-pets/installer": "0.1.1"
+  },
+  "scripts": {
+    "build": "rm -rf dist && bunx tsc -p tsconfig.json",
+    "prepack": "bun run build",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^6.0.3"
+  }
+}
