@@ -46,6 +46,12 @@ let debugMode = isDebugEnabled(process.argv);
 let dragState: { startCursor: { x: number; y: number }; startBounds: Rectangle } | null = null;
 let rendererReady = false;
 
+if (process.platform === "darwin") {
+  // OpenPets does not store secrets. Avoid Chromium initializing macOS
+  // Keychain-backed Safe Storage and showing a confusing permission prompt.
+  app.commandLine.appendSwitch("use-mock-keychain");
+}
+
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) {
   app.quit();
