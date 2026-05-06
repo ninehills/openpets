@@ -202,7 +202,7 @@ function updateTrayMenu() {
 
 function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
   const scale = normalizeScale(config.scale);
-  const activePetLabel = activePet?.id ? `Pet: ${activePet.id}` : "Pet: Loading…";
+  const activePetLabel = activePet?.displayName ? `Pet: ${activePet.displayName}` : "Pet: Loading…";
   return [
     { label: "OpenPets", enabled: false },
     { type: "separator" },
@@ -220,16 +220,8 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
       enabled: false,
     },
     {
-      label: "Installed Pets",
+      label: "Select Pet",
       submenu: createInstalledPetsSubmenu(),
-    },
-    {
-      label: "Choose Pet…",
-      click: () => void choosePetDirectory(),
-    },
-    {
-      label: "Use Default Pet",
-      click: () => void useDefaultPet(),
     },
     {
       label: "Scale",
@@ -271,17 +263,20 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
 }
 
 function createInstalledPetsSubmenu(): MenuItemConstructorOptions[] {
-  if (installedPets.length === 0) {
-    return [{ label: "No installed pets yet", enabled: false }];
-  }
-
-  return installedPets.map((pet) => ({
-    label: pet.displayName || pet.id,
-    sublabel: pet.id,
-    type: "radio" as const,
-    checked: activePet?.directory === pet.directory,
-    click: () => void selectInstalledPet(pet.directory),
-  }));
+  return [
+    {
+      label: "Default",
+      type: "radio" as const,
+      checked: !config.petPath,
+      click: () => void useDefaultPet(),
+    },
+    ...installedPets.map((pet) => ({
+      label: pet.displayName || pet.id,
+      type: "radio" as const,
+      checked: activePet?.directory === pet.directory,
+      click: () => void selectInstalledPet(pet.directory),
+    })),
+  ];
 }
 
 function getTrayIcon() {
