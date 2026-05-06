@@ -23,7 +23,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@open-pets/client": "0.1.1",
     "@open-pets/core": "0.1.1",
-    "zod": "^4.1.13"
+    "zod": "^4.4.3"
   },
   "scripts": {
     "build": "bunx tsc -p tsconfig.json",
@@ -32,6 +32,6 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.3"
   }
 }

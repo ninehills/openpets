@@ -1,9 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["bun"],
-    "jsx": "react-jsx",
-    "baseUrl": "."
+    "types": ["bun", "vite/client"],
+    "jsx": "react-jsx"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
 }
