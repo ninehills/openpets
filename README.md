@@ -16,12 +16,15 @@
 
 ## What is OpenPets?
 
-OpenPets is a desktop pet that reacts while coding agents work.
+OpenPets is the original cross-platform desktop pet system for AI coding agents.
 
 - **Desktop companion** - a small pet that changes state while agents think, edit, test, and finish.
 - **MCP ready** - agents can launch, talk to, and control the pet through the OpenPets MCP server.
 - **Integration friendly** - use MCP, the TypeScript client, or companion integrations for automatic status updates.
 - **Pet-pack friendly** - loads Codex style animated pet directories.
+
+Official site: https://openpets.dev  
+Integration guides: https://openpets.dev/integrations
 
 
 https://github.com/user-attachments/assets/fbad0d58-8040-4ebb-a26b-73fa497a4ceb
@@ -61,7 +64,7 @@ Use the companion integration for your agent when one exists:
 - **Claude Code**: install [Claude Pets](https://github.com/alvinunreal/claude-pets) for Claude hooks and OpenPets setup.
 - **OpenCode**: install [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) for OpenCode plugin integration.
 
-For Cursor, VS Code, Windsurf, or any other MCP-capable agent, configure the OpenPets MCP server directly. See [MCP integration](#mcp-integration) for copy-paste JSON and commands.
+For Cursor, VS Code, Windsurf, Zed, or any other MCP-capable agent, configure the OpenPets MCP server directly. See [MCP integration](#mcp-integration) for copy-paste JSON and commands, or use the full [AI assistant integration guides](docs/ai-assistants/README.md).
 
 ## MCP integration
 
@@ -83,6 +86,8 @@ Once connected, an agent can use OpenPets tools to start the desktop app, check 
 
 ### Setup examples
 
+Full setup guides live in [`docs/ai-assistants/`](docs/ai-assistants/README.md) and on https://openpets.dev/integrations.
+
 <details>
 <summary>Cursor</summary>
 
@@ -101,6 +106,26 @@ Add this to `~/.cursor/mcp.json` for global setup, or `.cursor/mcp.json` inside 
 ```
 
 Restart Cursor after changing MCP config.
+
+</details>
+
+<details>
+<summary>Zed</summary>
+
+Add this to `~/.config/zed/settings.json`:
+
+```json
+{
+  "context_servers": {
+    "openpets": {
+      "command": "bunx",
+      "args": ["@open-pets/mcp"]
+    }
+  }
+}
+```
+
+Restart Zed after changing settings. See [docs/ai-assistants/zed.md](docs/ai-assistants/zed.md) for rules and troubleshooting.
 
 </details>
 
