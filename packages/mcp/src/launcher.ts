@@ -5,10 +5,12 @@ import { fileURLToPath } from "node:url";
 
 export type DesktopLauncher = () => Promise<void>;
 
+const AGENT_LAUNCH_ARG = "--openpets-agent-launch";
+
 export async function launchOpenPetsDesktop() {
   const commandOverride = process.env.OPENPETS_DESKTOP_COMMAND?.trim();
   if (commandOverride) {
-    launchCommand(commandOverride, [], { shell: true });
+    launchCommand(commandOverride, [AGENT_LAUNCH_ARG], { shell: true });
     return;
   }
 
@@ -20,7 +22,7 @@ export async function launchOpenPetsDesktop() {
 
   if (process.platform === "darwin") {
     try {
-      await openMacApp("OpenPets");
+      await openMacApp("OpenPets", [AGENT_LAUNCH_ARG]);
       return;
     } catch {
       // Fall through to the monorepo dev launcher below.
@@ -30,7 +32,7 @@ export async function launchOpenPetsDesktop() {
   if (process.platform === "win32") {
     const exePath = findWindowsOpenPetsExe();
     if (exePath) {
-      launchCommand(exePath, [], { shell: false });
+      launchCommand(exePath, [AGENT_LAUNCH_ARG], { shell: false });
       return;
     }
   }
@@ -38,7 +40,7 @@ export async function launchOpenPetsDesktop() {
   if (process.platform === "linux") {
     const linuxCommand = findLinuxOpenPetsCommand();
     if (linuxCommand) {
-      launchCommand(linuxCommand, [], { shell: false });
+      launchCommand(linuxCommand, [AGENT_LAUNCH_ARG], { shell: false });
       return;
     }
   }
@@ -48,20 +50,20 @@ export async function launchOpenPetsDesktop() {
     throw new Error("OpenPets desktop app is not installed or the local desktop build is missing");
   }
 
-  launchCommand("bunx", ["electron", mainPath], { shell: false });
+  launchCommand("bunx", ["electron", mainPath, AGENT_LAUNCH_ARG], { shell: false });
 }
 
 async function openDesktopAppOverride(value: string) {
   if (process.platform === "darwin") {
     if (existsSync(value)) {
-      await openMacPath(value);
+      await openMacPath(value, [AGENT_LAUNCH_ARG]);
     } else {
-      await openMacApp(value);
+      await openMacApp(value, [AGENT_LAUNCH_ARG]);
     }
     return;
   }
 
-  launchCommand(value, [], { shell: false });
+  launchCommand(value, [AGENT_LAUNCH_ARG], { shell: false });
 }
 
 function launchCommand(command: string, args: string[], options: { shell: boolean }) {
@@ -73,8 +75,8 @@ function launchCommand(command: string, args: string[], options: { shell: boolea
   child.unref();
 }
 
-async function openMacApp(appNameOrPath: string) {
-  const result = spawnSync("open", ["-a", appNameOrPath], {
+async function openMacApp(appNameOrPath: string, appArgs: string[] = []) {
+  const result = spawnSync("open", ["-a", appNameOrPath, ...(appArgs.length ? ["--args", ...appArgs] : [])], {
     stdio: "ignore",
   });
   if (result.status !== 0 || result.error) {
@@ -82,8 +84,8 @@ async function openMacApp(appNameOrPath: string) {
   }
 }
 
-async function openMacPath(path: string) {
-  const result = spawnSync("open", [path], {
+async function openMacPath(path: string, appArgs: string[] = []) {
+  const result = spawnSync("open", [path, ...(appArgs.length ? ["--args", ...appArgs] : [])], {
     stdio: "ignore",
   });
   if (result.status !== 0 || result.error) {

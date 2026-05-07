@@ -12,15 +12,16 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "dev": "bun run build:main && bun run build:preload && bun run build:setup-preload && bunx vite --host 127.0.0.1",
+    "dev": "bun run build:main && bun run build:preload && bun run build:setup-preload && bun run build:onboarding-preload && bunx vite --host 127.0.0.1",
     "start": "bun run build && bunx electron dist/main.js",
-    "build": "bun run build:main && bun run build:preload && bun run build:setup-preload && bunx vite build",
+    "build": "bun run build:main && bun run build:preload && bun run build:setup-preload && bun run build:onboarding-preload && bunx vite build",
     "package:mac": "bun run build && bunx electron-builder --mac --config electron-builder.yml",
     "package:win": "bun run build && bunx electron-builder --win --x64 --config electron-builder.yml",
     "package:linux": "bun run build && bunx electron-builder --linux --x64 --config electron-builder.yml",
     "build:main": "bun build src/main.ts --target=node --external electron --outdir dist",
     "build:preload": "bun build src/preload.ts --target=node --format=cjs --external electron --outfile dist/preload.cjs",
     "build:setup-preload": "bun build src/assistant-setup/preload.ts --target=node --format=cjs --external electron --outfile dist/assistant-setup-preload.cjs",
+    "build:onboarding-preload": "bun build src/onboarding/preload.ts --target=node --format=cjs --external electron --outfile dist/onboarding-preload.cjs",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

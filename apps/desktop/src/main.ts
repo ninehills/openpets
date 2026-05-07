@@ -16,11 +16,22 @@ import {
   type OpenPetsEvent,
 } from "@open-pets/core";
 import type { OpenPetsHealthV2, OpenPetsWindowAction } from "@open-pets/core/ipc";
-import { getOpenPetsConfigPath, getOpenPetsPetsDir, type OpenPetsConfig } from "@open-pets/core/config";
+import {
+  ONBOARDING_VERSION,
+  createOnboardingState,
+  getOpenPetsConfigPath,
+  getOpenPetsPetsDir,
+  shouldOpenOnboarding,
+  type OpenPetsConfig,
+} from "@open-pets/core/config";
 import { loadCodexPetDirectory, type LoadedCodexPet } from "@open-pets/pet-format-codex";
 import { registerAssistantSetupIpc } from "./assistant-setup/ipc.js";
+import { createDetectionContext, detectAssistantSetups, getAssistantSetupAdapter } from "./assistant-setup/registry.js";
+import { parsePreviewToken } from "./assistant-setup/tokens.js";
 import { openAssistantSetupWindow } from "./assistant-setup/window.js";
 import { createDesktopIpcHandlers, startDesktopIpcServer, type DesktopIpcServerHandle } from "./ipc-server.js";
+import { registerOnboardingIpc } from "./onboarding/ipc.js";
+import { closeOnboardingWindow, openOnboardingWindow } from "./onboarding/window.js";
 
 const CODEX_FRAME_WIDTH = 192;
 const CODEX_FRAME_HEIGHT = 208;
@@ -32,6 +43,7 @@ const SPEECH_BUBBLE_SLOT_HEIGHT = 72;
 const SPEECH_BUBBLE_MAX_OUTER_WIDTH = 168;
 const MIN_WINDOW_WIDTH = 128;
 const DEFAULT_PET_SCALE = 1;
+const STARTER_PET_ID = "slayer";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -68,6 +80,37 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   installSecurityHeaders();
   registerAssistantSetupIpc();
+  registerOnboardingIpc({
+    getState: getOnboardingSnapshot,
+    skip: markOnboardingSkipped,
+    complete: markOnboardingCompleted,
+    close: closeOnboardingWindow,
+    detectAssistants: async () => {
+      return detectAssistantSetups(createDetectionContext());
+    },
+    previewAssistant: async (assistantId) => {
+      return getAssistantSetupAdapter(assistantId).preview(createDetectionContext());
+    },
+    applyAssistantSetup: async (previewToken) => {
+      const parsed = parsePreviewToken(previewToken);
+      if (!parsed) throw new Error("Invalid preview token.");
+      return getAssistantSetupAdapter(parsed.assistantId).apply(createDetectionContext(), { previewToken: parsed.token });
+    },
+    testConnection: async () => {
+      const health = getIpcHealth();
+      return {
+        ok: health.ready,
+        message: health.ready ? "OpenPets desktop IPC is reachable and ready." : "OpenPets is running, but the desktop pet is not ready yet.",
+        checklist: [
+          { label: "Desktop app running", ok: health.ok, detail: `OpenPets ${health.version}` },
+          { label: "Pet renderer ready", ok: health.ready, detail: health.activePet ? `Active pet: ${health.activePet}` : "No active pet yet" },
+          { label: "Assistant lease connected", ok: health.activeLeases > 0, detail: `${health.activeLeases} active lease${health.activeLeases === 1 ? "" : "s"}` },
+        ],
+      };
+    },
+    listStarterPets,
+    adoptStarterPet,
+  });
   debugLog("app ready", { argv: process.argv, debugMode });
   config = await loadConfig();
   await applyArgv(process.argv);
@@ -75,6 +118,7 @@ app.whenReady().then(async () => {
   await startLocalIpcServer();
   createTray();
   await createPetWindow();
+  await maybeOpenOnboardingWindow(process.argv);
   publishState();
 });
 
@@ -220,6 +264,10 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
     {
       label: "Setup AI Assistants",
       click: () => void openAssistantSetupWindow({ dirname: __dirname, debugMode }),
+    },
+    {
+      label: "Open First-Run Guide",
+      click: () => void openOnboardingWindow({ dirname: __dirname, debugMode, forced: true }),
     },
     { type: "separator" },
     {
@@ -407,10 +455,82 @@ function publishState() {
 
 async function handleSecondInstance(argv: string[]) {
   const action = await applyArgv(argv);
+  if (hasOnboardingArg(argv)) {
+    await openOnboardingWindow({ dirname: __dirname, debugMode, forced: true });
+  }
   if (action !== "hide" && action !== "quit") {
     showPetWindow("second-instance");
   }
   publishState();
+}
+
+async function maybeOpenOnboardingWindow(argv: string[]) {
+  const forced = hasOnboardingArg(argv);
+  if (!shouldOpenOnboarding(config, { packaged: app.isPackaged, forced, mode: getOnboardingLaunchMode(argv) })) return;
+  await openOnboardingWindow({ dirname: __dirname, debugMode, forced });
+}
+
+function getOnboardingLaunchMode(argv: string[]): "interactive" | "agent" {
+  return argv.includes("--openpets-agent-launch") || process.env.OPENPETS_AGENT_LAUNCH === "1" ? "agent" : "interactive";
+}
+
+function hasOnboardingArg(argv: string[]) {
+  return argv.includes("--openpets-onboarding") || argv.includes("--onboarding");
+}
+
+function getOnboardingSnapshot() {
+  return {
+    onboarding: config.onboarding ?? null,
+    version: ONBOARDING_VERSION,
+    packaged: app.isPackaged,
+  };
+}
+
+async function markOnboardingSkipped() {
+  config = { ...config, onboarding: createOnboardingState("skipped") };
+  await saveConfig(config);
+  return getOnboardingSnapshot();
+}
+
+async function markOnboardingCompleted() {
+  config = { ...config, onboarding: createOnboardingState("completed") };
+  await saveConfig(config);
+  return getOnboardingSnapshot();
+}
+
+async function listStarterPets() {
+  return [await getStarterPetSummary(STARTER_PET_ID)];
+}
+
+async function adoptStarterPet(petId: string) {
+  if (petId !== STARTER_PET_ID) throw new Error("Unknown starter pet id.");
+  const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
+  if (!loaded.ok) throw new Error(loaded.issues.map((item) => item.message).join("\n"));
+
+  activePet = loaded.pet;
+  const { petPath: _petPath, ...nextConfig } = config;
+  config = { ...nextConfig, hidden: false, onboarding: createOnboardingState("completed") };
+  await saveConfig(config);
+  showPetWindow("starter-pet-adopted");
+  publishState();
+
+  return {
+    ok: true,
+    pet: await getStarterPetSummary(petId),
+    message: `${activePet.displayName || activePet.id} is now your active pet.`,
+    onboarding: getOnboardingSnapshot(),
+  };
+}
+
+async function getStarterPetSummary(petId: string) {
+  if (petId !== STARTER_PET_ID) throw new Error("Unknown starter pet id.");
+  const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
+  return {
+    id: STARTER_PET_ID,
+    name: loaded.ok ? loaded.pet.displayName || loaded.pet.id : "Slayer",
+    description: "The bundled starter pet included with OpenPets.",
+    bundled: true,
+  };
 }
 
 async function applyArgv(argv: string[]) {
