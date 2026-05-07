@@ -758,11 +758,14 @@ async function installCliCommand() {
   }
 
   if ("code" in result) {
-    await dialog.showMessageBox({
+    const options: Electron.MessageBoxOptions = {
       type: "error",
       title: "Install CLI Command",
       message: result.message,
-      detail: result.path ? `Path: ${result.path}` : undefined,
+      ...(result.path ? { detail: `Path: ${result.path}` } : {}),
+    };
+    await dialog.showMessageBox({
+      ...options,
     });
     return;
   }
