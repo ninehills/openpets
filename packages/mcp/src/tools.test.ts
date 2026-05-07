@@ -1,8 +1,22 @@
 import { describe, expect, test } from "bun:test";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { OpenPetsState } from "@open-pets/core";
+import { openPetsStates } from "@open-pets/core";
 import type { OpenPetsHealthV2 } from "@open-pets/core/ipc";
 import { OpenPetsClientError } from "@open-pets/client";
-import { createMcpLeaseManager, openPetsHealthTool, openPetsReleaseTool, openPetsSayTool, openPetsSetStateTool, openPetsStartTool, type OpenPetsToolClient } from "./tools.js";
+import {
+  createMcpLeaseManager,
+  openPetsHealthTool,
+  openPetsReleaseTool,
+  openPetsSayTool,
+  openPetsSetStateTool,
+  openPetsStartTool,
+  openPetsToolDescriptions,
+  openPetsFieldDescriptions,
+  openPetsStateGuidance,
+  registerOpenPetsTools,
+  type OpenPetsToolClient,
+} from "./tools.js";
 import { createSpeechLimiter } from "./safety.js";
 
 describe("OpenPets MCP tools", () => {
@@ -133,10 +147,114 @@ describe("OpenPets MCP tools", () => {
     const limiter = createSpeechLimiter({ minIntervalMs: 1000 });
     await openPetsSayTool(fakeClient({ events }), limiter, "working", "First safe update.");
     const result = await openPetsSayTool(fakeClient({ events }), limiter, "working", "Second safe update.");
-    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}" )).toEqual({ sent: false, reason: "rate-limited" });
+    expect(JSON.parse(result.content[0]?.type === "text" ? result.content[0].text : "{}")).toEqual({ sent: false, reason: "rate-limited" });
     expect(events).toHaveLength(1);
   });
 });
+
+describe("OpenPets MCP tool schema regression", () => {
+  function captureRegisteredTools() {
+    const registeredTools = new Map<string, { description: string; inputSchema?: unknown }>();
+    const server = {
+      registerTool: (name: string, meta: { description: string; inputSchema?: unknown }, _handler: unknown) => {
+        registeredTools.set(name, { description: meta.description, inputSchema: meta.inputSchema });
+      },
+    } as unknown as McpServer;
+
+    registerOpenPetsTools(server, fakeClient({}), createSpeechLimiter({ minIntervalMs: 0 }), async () => undefined);
+    return registeredTools;
+  }
+
+  test("all five expected tool names are registered", () => {
+    const names = [...captureRegisteredTools().keys()].sort();
+    expect(names).toEqual(["openpets_health", "openpets_release", "openpets_say", "openpets_set_state", "openpets_start"]);
+  });
+
+  test("openpets_say description includes privacy categories", () => {
+    const registeredTools = captureRegisteredTools();
+    const description = registeredTools.get("openpets_say")?.description ?? "";
+    expect(description).toBe(openPetsToolDescriptions.say);
+    const privacyCategories = [
+      "user text",
+      "code",
+      "file paths",
+      "shell commands",
+      "command output",
+      "logs",
+      "diffs",
+      "URLs",
+      "secrets",
+      "tokens",
+      "exact error messages",
+      "private data",
+    ];
+    for (const category of privacyCategories) {
+      expect(description).toContain(category);
+    }
+    expect(description).toContain("paraphrase");
+  });
+
+  test("final-response guidance prefers openpets_set_state and mentions success/error/warning", () => {
+    const registeredTools = captureRegisteredTools();
+    const sayDescription = registeredTools.get("openpets_say")?.description ?? "";
+    const setStateDescription = registeredTools.get("openpets_set_state")?.description ?? "";
+    expect(sayDescription).toContain("openpets_set_state");
+    expect(sayDescription).toContain("success");
+    expect(sayDescription).toContain("error");
+    expect(sayDescription).toContain("warning");
+    expect(setStateDescription).toContain("openpets_set_state");
+    expect(setStateDescription).toContain("success");
+    expect(setStateDescription).toContain("error");
+    expect(setStateDescription).toContain("warning");
+  });
+
+  test("openpets_set_state description mentions without speech or silent", () => {
+    const desc = captureRegisteredTools().get("openpets_set_state")?.description.toLowerCase() ?? "";
+    expect(desc).toMatch(/without speech|silent/);
+  });
+
+  test("openpets_start mentions openpets_say/openpets_set_state and running false/health failure/unknown availability", () => {
+    const desc = captureRegisteredTools().get("openpets_start")?.description.toLowerCase() ?? "";
+    expect(desc).toContain("openpets_say");
+    expect(desc).toContain("openpets_set_state");
+    expect(desc).toContain("running is false");
+    expect(desc).toContain("health fails");
+    expect(desc).toContain("availability is unknown");
+  });
+
+  test("openPetsStateGuidance covers every openPetsStates value, including waving and celebrating", () => {
+    for (const state of openPetsStates) {
+      expect(openPetsStateGuidance[state]).toBeDefined();
+      expect(openPetsStateGuidance[state].length).toBeGreaterThan(0);
+    }
+    expect(openPetsStateGuidance.waving).toBeDefined();
+    expect(openPetsStateGuidance.celebrating).toBeDefined();
+  });
+
+  test("openpets_say state guidance does not include warning/celebrating/waving/sleeping/idle but openpets_set_state does", () => {
+    const excludedStates = ["warning", "celebrating", "waving", "sleeping", "idle"];
+    for (const state of excludedStates) {
+      expect(openPetsFieldDescriptions.sayState).not.toContain(state);
+    }
+    for (const state of excludedStates) {
+      expect(openPetsFieldDescriptions.setState).toContain(state);
+    }
+  });
+
+  test("registered input schemas expose field descriptions", () => {
+    const registeredTools = captureRegisteredTools();
+    const sayShape = getInputShape(registeredTools.get("openpets_say")?.inputSchema);
+    const setStateShape = getInputShape(registeredTools.get("openpets_set_state")?.inputSchema);
+
+    expect(sayShape.state?.description).toBe(openPetsFieldDescriptions.sayState);
+    expect(sayShape.message?.description).toBe(openPetsFieldDescriptions.sayMessage);
+    expect(setStateShape.state?.description).toBe(openPetsFieldDescriptions.setState);
+  });
+});
+
+function getInputShape(inputSchema: unknown) {
+  return (inputSchema as { shape?: Record<string, { description?: string }> } | undefined)?.shape ?? {};
+}
 
 function fakeClient(options: { health?: OpenPetsHealthV2; healthError?: Error; events?: unknown[]; leaseActions?: string[]; getHealth?: OpenPetsToolClient["getHealth"] }): OpenPetsToolClient {
   return {

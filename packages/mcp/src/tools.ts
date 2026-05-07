@@ -19,6 +19,41 @@ export type OpenPetsLeaseManager = {
 const sayStates = ["thinking", "working", "editing", "running", "testing", "waiting", "success", "error"] as const satisfies readonly OpenPetsState[];
 type SayState = (typeof sayStates)[number];
 
+export const openPetsStateGuidance = {
+  idle: "available, no active task",
+  thinking: "planning or deciding",
+  working: "general active work",
+  editing: "changing files",
+  running: "running commands or builds",
+  testing: "running tests or checks",
+  waiting: "blocked or awaiting external input",
+  waving: "friendly acknowledgement; use sparingly",
+  success: "task complete",
+  error: "failed or blocked",
+  warning: "partial success or user attention needed",
+  celebrating: "notable success; use sparingly",
+  sleeping: "intentionally inactive",
+} as const satisfies Record<OpenPetsState, string>;
+
+const privacyGuidance = "Do not quote or paraphrase user-provided or sensitive content. Do not include user text, code, file paths, shell commands, command output, logs, diffs, URLs, secrets, tokens, exact error messages, or private data.";
+const finalStatusGuidance = "Before a final response, prefer openpets_set_state with success, error, or warning; use speech only if a short generic bubble helps.";
+const sayStateGuidance = sayStates.map((state) => `${state}=${openPetsStateGuidance[state]}`).join("; ");
+const allStateGuidance = openPetsStates.map((state) => `${state}=${openPetsStateGuidance[state]}`).join("; ");
+
+export const openPetsToolDescriptions = {
+  health: "Check whether the OpenPets desktop pet is reachable locally. Use when availability is unknown; if running is false, call openpets_start before speech or state tools. This is a safe read-only check.",
+  start: "Launch the local OpenPets desktop pet if needed. Use before openpets_say or openpets_set_state when health says running is false, health fails, or availability is unknown. Safe to call more than once; when supported, it acquires and maintains this MCP session's lease.",
+  release: "Release this MCP session's use of the desktop pet. Use at the end of a long session, when the user asks to stop using the pet, or before exit if practical. This does not globally quit OpenPets and will not close a pet used by another session.",
+  say: `Send a short, generic, safe progress message to the OpenPets desktop pet. ${privacyGuidance} Use occasionally during multi-step work when speech helps; prefer openpets_set_state for frequent or silent status changes. ${finalStatusGuidance} Keep it under 100 characters and one sentence. Good examples: "Checking the next step.", "Tests are running.", "I’m ready with the result." State meanings: ${sayStateGuidance}.`,
+  setState: `Set the OpenPets desktop pet status without speech. Use for silent or frequent state transitions where speech would be noisy. ${finalStatusGuidance} State meanings: ${allStateGuidance}.`,
+} as const;
+
+export const openPetsFieldDescriptions = {
+  sayState: `Display state for the speech bubble. Allowed speech states: ${sayStateGuidance}.`,
+  sayMessage: `Short generic one-sentence progress message under 100 characters. ${privacyGuidance}`,
+  setState: `OpenPets animation state without speech. All states: ${allStateGuidance}.`,
+} as const;
+
 export function registerOpenPetsTools(
   server: McpServer,
   client: OpenPetsToolClient = createOpenPetsClient(),
@@ -29,7 +64,7 @@ export function registerOpenPetsTools(
   server.registerTool(
     "openpets_health",
     {
-      description: "Check whether the OpenPets desktop pet is reachable locally.",
+      description: openPetsToolDescriptions.health,
       inputSchema: z.object({}),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
@@ -39,7 +74,7 @@ export function registerOpenPetsTools(
   server.registerTool(
     "openpets_start",
     {
-      description: "Launch the local OpenPets desktop pet if it is not already running. Use this before OpenPets speech or state tools when health says running is false.",
+      description: openPetsToolDescriptions.start,
       inputSchema: z.object({}),
       annotations: { idempotentHint: true },
     },
@@ -49,7 +84,7 @@ export function registerOpenPetsTools(
   server.registerTool(
     "openpets_release",
     {
-      description: "Release this Claude/OpenPets session's use of the desktop pet. This does not globally quit OpenPets and will not close a pet used by another session.",
+      description: openPetsToolDescriptions.release,
       inputSchema: z.object({}),
       annotations: { idempotentHint: true },
     },
@@ -59,10 +94,10 @@ export function registerOpenPetsTools(
   server.registerTool(
     "openpets_say",
     {
-      description: "Send a short safe progress update to the OpenPets desktop pet. Use occasionally during work when a brief status would help the user feel progress. Do not include user text, code, file paths, shell commands, command output, logs, diffs, URLs, secrets, tokens, exact error messages, or private data. Keep it under 100 characters and one sentence.",
+      description: openPetsToolDescriptions.say,
       inputSchema: z.object({
-        state: z.enum(sayStates).describe("Display state for the speech bubble."),
-        message: z.string().describe("Short safe one-sentence progress message."),
+        state: z.enum(sayStates).describe(openPetsFieldDescriptions.sayState),
+        message: z.string().describe(openPetsFieldDescriptions.sayMessage),
       }),
     },
     async ({ state, message }) => openPetsSayTool(client, limiter, state, message, leaseManager),
@@ -71,9 +106,9 @@ export function registerOpenPetsTools(
   server.registerTool(
     "openpets_set_state",
     {
-      description: "Set the OpenPets desktop pet status without speech.",
+      description: openPetsToolDescriptions.setState,
       inputSchema: z.object({
-        state: z.enum(openPetsStates).describe("OpenPets state."),
+        state: z.enum(openPetsStates).describe(openPetsFieldDescriptions.setState),
       }),
     },
     async ({ state }) => openPetsSetStateTool(client, state, leaseManager),
