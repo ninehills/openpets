@@ -1,8 +1,9 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, session, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, screen, session, shell, Tray } from "electron";
 import type { MenuItemConstructorOptions, Rectangle } from "electron";
 import {
   createInitialPetRuntimeState,
@@ -30,6 +31,8 @@ import { createDetectionContext, detectAssistantSetups, getAssistantSetupAdapter
 import { parsePreviewToken } from "./assistant-setup/tokens.js";
 import { openAssistantSetupWindow } from "./assistant-setup/window.js";
 import { createDesktopIpcHandlers, startDesktopIpcServer, type DesktopIpcServerHandle } from "./ipc-server.js";
+import { installCliShim } from "./menu-actions/cli-shim.js";
+import { GENERIC_MCP_CONFIG, INTEGRATIONS_DOCS_URL, PET_GALLERY_URL } from "./menu-actions/constants.js";
 import { registerOnboardingIpc } from "./onboarding/ipc.js";
 import { closeOnboardingWindow, openOnboardingWindow } from "./onboarding/window.js";
 
@@ -264,6 +267,22 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
     {
       label: "Setup AI Assistants",
       click: () => void openAssistantSetupWindow({ dirname: __dirname, debugMode }),
+    },
+    {
+      label: "Copy MCP Config",
+      click: () => void copyMcpConfig(),
+    },
+    {
+      label: "Open Integrations Docs",
+      click: () => void openAllowlistedExternalUrl("Open Integrations Docs", INTEGRATIONS_DOCS_URL),
+    },
+    {
+      label: "Install CLI Command",
+      click: () => void installCliCommand(),
+    },
+    {
+      label: "Open Pet Gallery",
+      click: () => void openAllowlistedExternalUrl("Open Pet Gallery", PET_GALLERY_URL),
     },
     {
       label: "Open First-Run Guide",
@@ -692,6 +711,72 @@ async function revealConfigFolder() {
   const configDir = dirname(getOpenPetsConfigPath());
   await mkdir(configDir, { recursive: true });
   await reportShellOpenFailure("Reveal config folder", shell.openPath(configDir));
+}
+
+async function copyMcpConfig() {
+  clipboard.writeText(GENERIC_MCP_CONFIG);
+  await dialog.showMessageBox({
+    type: "info",
+    title: "MCP config copied",
+    message: "Generic OpenPets MCP config was copied to the clipboard.",
+    detail: GENERIC_MCP_CONFIG,
+  });
+}
+
+async function openAllowlistedExternalUrl(title: string, url: string) {
+  if (url !== INTEGRATIONS_DOCS_URL && url !== PET_GALLERY_URL) {
+    await dialog.showMessageBox({
+      type: "error",
+      title,
+      message: "OpenPets blocked an unknown external URL.",
+    });
+    return;
+  }
+
+  try {
+    await shell.openExternal(url);
+  } catch (error) {
+    await dialog.showMessageBox({
+      type: "error",
+      title,
+      message: "OpenPets could not open that link.",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+async function installCliCommand() {
+  const result = await installCliShim({ homeDir: homedir() }).catch((error: unknown) => error instanceof Error ? error : new Error(String(error)));
+  if (result instanceof Error) {
+    await dialog.showMessageBox({
+      type: "error",
+      title: "Install CLI Command",
+      message: "OpenPets could not install the CLI command.",
+      detail: result.message,
+    });
+    return;
+  }
+
+  if ("code" in result) {
+    await dialog.showMessageBox({
+      type: "error",
+      title: "Install CLI Command",
+      message: result.message,
+      detail: result.path ? `Path: ${result.path}` : undefined,
+    });
+    return;
+  }
+
+  const pathGuidance = result.pathOnPath
+    ? "This directory appears to be on PATH for the desktop process."
+    : `Add ${dirname(result.path)} to your shell PATH if the openpets command is not found.`;
+  const shadowGuidance = result.shadowedBy ? `\n\nAnother openpets command may appear earlier on PATH: ${result.shadowedBy}` : "";
+  await dialog.showMessageBox({
+    type: "info",
+    title: "Install CLI Command",
+    message: result.status === "already-installed" ? "The OpenPets CLI command is already installed." : result.status === "updated" ? "The OpenPets CLI command was updated." : "The OpenPets CLI command was installed.",
+    detail: `Installed path: ${result.path}\n\n${pathGuidance}${shadowGuidance}\n\nTry: openpets start`,
+  });
 }
 
 async function reportShellOpenFailure(title: string, operation: Promise<string>) {
