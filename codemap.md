@@ -22,6 +22,7 @@ Root workspace coordinating multiple packages and apps through Bun workspaces. D
 
 ## Integration
 
-- **Internal**: Coordinates 5 packages and 1 desktop app through workspace references
-- **External**: Publishes to npm registry as `@open-pets/*` scoped packages
-- **Desktop**: Electron-based desktop app consumes all packages
+- **Internal**: Coordinates 7 packages and 1 desktop app through workspace references
+- **External**: Publishes to npm registry as `@open-pets/*` scoped packages (plus `install-pet` unscoped)
+- **Desktop**: Electron-based desktop app consumes core and pet-format-codex directly
+- **CLI Tools**: `openpets` CLI, `install-pet` one-command installer, and `openpets-mcp` MCP server
