@@ -144,3 +144,126 @@ body,
     animation: none;
   }
 }
+
+.assistant-setup-shell {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 28px;
+  overflow: auto;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  user-select: text;
+}
+
+.assistant-setup-header,
+.assistant-preview,
+.assistant-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.assistant-setup-header {
+  margin-bottom: 20px;
+}
+
+.assistant-setup-header h1,
+.assistant-row h2,
+.assistant-preview h2 {
+  margin: 0;
+}
+
+.assistant-setup-header p,
+.assistant-row p,
+.assistant-preview p {
+  margin: 6px 0 0;
+  color: #94a3b8;
+}
+
+.assistant-setup-kicker {
+  margin: 0 0 6px !important;
+  color: #38bdf8 !important;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.assistant-setup-list {
+  display: grid;
+  gap: 12px;
+}
+
+.assistant-row,
+.assistant-preview,
+.assistant-setup-error,
+.assistant-setup-result {
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid rgb(148 163 184 / 0.22);
+  border-radius: 14px;
+  background: rgb(15 23 42 / 0.86);
+}
+
+.assistant-statuses,
+.assistant-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.assistant-status-pill {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgb(30 41 59);
+  color: #cbd5e1;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.assistant-actions button,
+.assistant-setup-header button,
+.assistant-preview button {
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #38bdf8;
+  color: #082f49;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.assistant-actions button:last-child {
+  background: #334155;
+  color: #e2e8f0;
+}
+
+.assistant-actions button:disabled,
+.assistant-setup-header button:disabled,
+.assistant-preview button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.assistant-warning {
+  color: #fbbf24 !important;
+}
+
+.assistant-setup-error {
+  margin-bottom: 12px;
+  color: #fecaca;
+  border-color: rgb(248 113 113 / 0.45);
+}
+
+.assistant-setup-result {
+  margin-bottom: 12px;
+  color: #bbf7d0;
+  border-color: rgb(74 222 128 / 0.4);
+}
+
+.assistant-preview {
+  margin-top: 18px;
+}

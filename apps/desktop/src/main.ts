@@ -18,6 +18,8 @@ import {
 import type { OpenPetsHealthV2, OpenPetsWindowAction } from "@open-pets/core/ipc";
 import { getOpenPetsConfigPath, getOpenPetsPetsDir, type OpenPetsConfig } from "@open-pets/core/config";
 import { loadCodexPetDirectory, type LoadedCodexPet } from "@open-pets/pet-format-codex";
+import { registerAssistantSetupIpc } from "./assistant-setup/ipc.js";
+import { openAssistantSetupWindow } from "./assistant-setup/window.js";
 import { createDesktopIpcHandlers, startDesktopIpcServer, type DesktopIpcServerHandle } from "./ipc-server.js";
 
 const CODEX_FRAME_WIDTH = 192;
@@ -65,6 +67,7 @@ app.whenReady().then(async () => {
   hideDockIcon();
   Menu.setApplicationMenu(null);
   installSecurityHeaders();
+  registerAssistantSetupIpc();
   debugLog("app ready", { argv: process.argv, debugMode });
   config = await loadConfig();
   await applyArgv(process.argv);
@@ -213,6 +216,10 @@ function createTrayMenuTemplate(): MenuItemConstructorOptions[] {
     {
       label: "Sleep",
       click: () => void handleWindowAction("sleep"),
+    },
+    {
+      label: "Setup AI Assistants",
+      click: () => void openAssistantSetupWindow({ dirname: __dirname, debugMode }),
     },
     { type: "separator" },
     {
