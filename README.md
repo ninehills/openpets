@@ -63,6 +63,7 @@ Use the companion integration for your agent when one exists:
 
 - **Claude Code**: install [Claude Pets](https://github.com/alvinunreal/claude-pets) for Claude hooks and OpenPets setup.
 - **OpenCode**: install [OpenCode Pets](https://github.com/alvinunreal/opencode-pets) for OpenCode plugin integration.
+- **Pi agents**: install [pi-openpets](https://github.com/ninehills/pi-openpets.git). It uses Pi hooks to mirror agent lifecycle and tool activity, without MCP and without exposing OpenPets as an LLM tool.
 
 For Cursor, VS Code, Windsurf, Zed, or any other MCP-capable agent, configure the OpenPets MCP server directly. See [MCP integration](#mcp-integration) for copy-paste JSON and commands, or use the full [AI assistant integration guides](docs/ai-assistants/README.md).
 
@@ -173,6 +174,25 @@ Add this to `~/.codeium/windsurf/mcp_config.json` on macOS/Linux, or `%USERPROFI
 ```
 
 Fully quit and reopen Windsurf after changing MCP config.
+
+</details>
+
+<details>
+<summary>Pi agents</summary>
+
+Install the Pi extension package. This integration is hook-based: Pi events drive OpenPets directly, so it does not require MCP configuration.
+
+```bash
+pi install git:github.com/ninehills/pi-openpets.git
+```
+
+Then restart Pi, or run `/reload` in Pi. For project-local installation, use:
+
+```bash
+pi install -l git:github.com/ninehills/pi-openpets.git
+```
+
+See [docs/ai-assistants/pi.md](docs/ai-assistants/pi.md) for commands, status behavior, and privacy notes.
 
 </details>
 

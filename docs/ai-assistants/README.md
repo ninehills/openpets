@@ -15,6 +15,7 @@ Official GitHub: https://github.com/alvinunreal/openpets
 | VS Code / GitHub Copilot | Direct MCP config | [vscode.md](vscode.md) |
 | Windsurf | Direct MCP config | [windsurf.md](windsurf.md) |
 | Zed | Direct MCP config + project rules | [zed.md](zed.md) |
+| Pi agents | Pi hooks extension, no MCP required | [pi.md](pi.md) |
 | Any MCP client | Generic stdio MCP server | [generic-mcp.md](generic-mcp.md) |
 
 ## Shared agent instructions
