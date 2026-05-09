@@ -472,6 +472,8 @@ async function createForLease(leaseId: string, source: string) {
       clearTimeout(existing.disconnectTimer);
       delete existing.disconnectTimer;
     }
+    // Re-resolve pet in case the default pet or agent config changed
+    existing.pet = await resolvePetForSource(source);
     return existing;
   }
   if (petInstances.size === 1 && petInstances.has(DEFAULT_INSTANCE_ID)) {
@@ -609,6 +611,11 @@ async function handleLease(params: LeaseParams) {
       clearTimeout(instance.disconnectTimer);
       delete instance.disconnectTimer;
     }
+    // Recover from server restart: if heartbeat arrives for an unknown lease
+    // the client thinks it's active but we have no instance. Create one.
+    if (!instance) {
+      void createForLease(params.id, params.id);
+    }
   } else if (params.action === "release") {
     scheduleDestroyForLease(params.id);
   }
@@ -625,9 +632,27 @@ function applyEvent(event: OpenPetsEvent) {
 }
 
 function getInstanceForEvent(event: OpenPetsEvent) {
-  if (event.leaseId) return petInstances.get(event.leaseId) ?? getDefaultInstance();
-  if (event.source) return petInstances.get(event.source) ?? getDefaultInstance();
+  if (event.leaseId) {
+    const existing = petInstances.get(event.leaseId);
+    if (existing) return existing;
+    return createAutoInstance(event.leaseId, event.source || event.leaseId);
+  }
+  if (event.source) {
+    const existing = petInstances.get(event.source);
+    if (existing) return existing;
+    return createAutoInstance(event.source, event.source);
+  }
   return getDefaultInstance();
+}
+
+function createAutoInstance(id: string, source: string): PetInstance {
+  const instance = createPetInstance(id, source, defaultPet);
+  petInstances.set(id, instance);
+  if (petInstances.size === 2 && petInstances.has(DEFAULT_INSTANCE_ID)) {
+    destroyForLease(DEFAULT_INSTANCE_ID);
+  }
+  void createWindowForInstance(instance);
+  return instance;
 }
 
 function publishState() {
@@ -831,6 +856,12 @@ async function selectPet(params: { path: string }) {
   config = { ...config, petPath: loaded.pet.directory, hidden: false };
   await saveConfig(config);
   installedPets = await loadInstalledPets();
+
+  // Update all existing instances that don't have a source-specific override
+  for (const instance of petInstances.values()) {
+    instance.pet = await resolvePetForSource(instance.leaseId);
+  }
+
   showPetWindow("select-pet");
   publishState();
   return {
