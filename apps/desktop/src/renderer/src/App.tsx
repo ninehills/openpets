@@ -44,7 +44,7 @@ export function App() {
     return () => clearTimeout(timeout);
   }, [petState.event?.message, petState.event?.timestamp, petState.event?.state]);
 
-  const hoverLabel = `${formatAgentLabel(petState.agentType, petState.detail)} — ${petState.state}`;
+  const hoverLabel = `${formatAgentLabel(petState.agentType, petState.detail)} - ${petState.state}`;
 
   return (
     <main className="overlay-shell">
@@ -64,9 +64,10 @@ export function App() {
 }
 
 function formatAgentLabel(agentType?: string, detail?: string) {
-  const agentName = agentType?.trim() || "OpenPets";
-  const project = detail?.trim();
-  return project ? `${agentName}(${project})` : agentName;
+  const rawAgent = agentType?.trim() || "openpets";
+  const rawDetail = detail?.trim();
+  const project = rawDetail ? rawDetail.split(":")[0]?.trim() : "";
+  return project ? `${rawAgent}(${project})` : rawAgent;
 }
 
 function PetSprite({ state, scale, spritesheetUrl }: { state: OpenPetsState; scale: number; spritesheetUrl?: string }) {

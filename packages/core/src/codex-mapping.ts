@@ -26,7 +26,7 @@ export const CODEX_SPRITESHEET_WIDTH = 1536;
 export const CODEX_SPRITESHEET_HEIGHT = 1872;
 
 export const codexStates = [
-  { id: "idle", row: 0, frames: 6, durationMs: 1100 },
+  { id: "idle", row: 0, frames: 6, durationMs: 5500 },
   { id: "running-right", row: 1, frames: 8, durationMs: 1060 },
   { id: "running-left", row: 2, frames: 8, durationMs: 1060 },
   { id: "waving", row: 3, frames: 4, durationMs: 700 },

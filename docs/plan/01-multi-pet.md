@@ -2,95 +2,113 @@
 
 ## Context
 
-当前 OpenPets 是单宠物：所有 Agent 共享一个状态机、一个 BrowserWindow。本需求改为每个 Agent lease 对应一个独立宠物窗口，支持不同 Agent 类型映射不同外观。详见 `docs/prd/01-multi-pet.md`。
+OpenPets 原先只有一个 BrowserWindow 和一个 runtime state。多宠物模式将运行时改为 `Map<leaseId, PetInstance>`：每个 active lease 拥有独立窗口、pet 外观和 reducer state。
 
-## Approach
+最终实现采用低改动路由策略：**lease id 是 session key；事件可通过 `leaseId` 或 `source === leaseId` 路由**。`source === leaseId` 用于兼容旧 `@open-pets/client/core` 会剥掉 `leaseId` 字段的问题。
 
-核心思路：**宠物数 = max(1, lease 数)**。lease 的 acquire/release 事件驱动宠物窗口的创建/销毁。事件通过可选的 `leaseId` 字段路由到对应宠物。老客户端不带 `leaseId` 时走默认宠物，完全向后兼容。
+## Implementation Summary
 
-`main.ts` 中当前是单例变量（`activePet`, `runtimeState`, `mainWindow`），改为 `Map<string, PetInstance>`，用一个 `PetInstanceManager` 集中管理。
+### Core
 
-## Files to modify
+- `OpenPetsConfig` 新增：
+  - `agents?: Record<string, string>`
+- `OpenPetsEvent` 新增：
+  - `leaseId?: string`
+- `validateOpenPetsEvent()` 允许 `leaseId` 通过。
+- 新增 `parseSource(source)`，用于把展示 source/label 解析成 `{ agentType, detail }`。
+- `OpenPetsHealthV2` 新增：
+  - `activePets: OpenPetsHealthPet[]`
+  - capability `multi-pet-v1`
+- `activePet` 保留作为旧客户端兼容字段。
 
-| 文件 | 改动重点 |
+### Desktop main process
+
+- 引入 `PetInstance`：每个实例持有自己的：
+  - `leaseId`
+  - `agentType/detail`
+  - `pet`
+  - `PetRuntimeState`
+  - `BrowserWindow`
+  - temporary state expiration timer
+  - disconnect delay timer
+- `petInstances: Map<string, PetInstance>` 替代单例 runtime/window。
+- `ensureDefaultPet()` 保证无 lease 时仍有默认宠物。
+- `createForLease(id, source)` 在 acquire 时创建窗口。
+- `scheduleDestroyForLease(id)` 在 release 时延迟 10 秒关闭窗口。
+- `createWindowForInstance(instance)` 复用原窗口配置，并为新窗口做 cascade 定位。
+- drag 使用 IPC sender 定位对应窗口，避免拖动任意宠物都移动第一个窗口。
+
+### Event routing
+
+最终路由逻辑：
+
+```ts
+function getInstanceForEvent(event: OpenPetsEvent) {
+  if (event.leaseId) return petInstances.get(event.leaseId) ?? getDefaultInstance();
+  if (event.source) return petInstances.get(event.source) ?? getDefaultInstance();
+  return getDefaultInstance();
+}
+```
+
+含义：
+
+1. 新客户端可显式传 `leaseId`。
+2. 旧客户端可设置 `source = leaseId`，因为旧 core 会保留 source。
+3. 无路由信息时保持旧行为，更新默认宠物。
+
+不再按 `agentType/detail` 模糊匹配路由，避免相同 agent + 相同目录的多个 session 串消息。
+
+### Display / hover
+
+- lease acquire 时优先用 `params.label` 作为展示 source：
+  - 例如 `cli:Pi Agent - openpets`
+- renderer hover 将 `Agent - project` 格式压缩为：
+  - `Agent(project) — state`
+- 路由 source 和展示 label 解耦：
+  - 路由：`source = leaseId` 或 `leaseId`
+  - 展示：lease label
+
+### Client / MCP
+
+- `packages/client/src/event-input.ts` 支持 `leaseId` 透传。
+- `packages/client/src/client.ts` 不保存 active lease，也不自动补 `leaseId`。
+- MCP 自己持有 lease manager，发送事件时显式带 `leaseId`。
+- Pi 扩展推荐用低改动兼容模式：event `source` 设置成 lease id。
+
+## Files Modified
+
+| 文件 | 说明 |
 |---|---|
-| `packages/core/src/config.ts` | `OpenPetsConfig` 新增 `agents` 字段 |
-| `packages/core/src/event.ts` | `OpenPetsEvent` 新增可选 `leaseId`；新增 `parseSource()` 工具函数 |
-| `packages/core/src/ipc.ts` | `OpenPetsHealthV2.activePet` → `activePets` 数组 |
-| `apps/desktop/src/main.ts` | 核心改动：PetInstanceManager、多窗口管理、事件路由、cascade 定位 |
-| `apps/desktop/src/preload.ts` | `RendererPetState` 新增 `agentType`、`detail` 字段 |
-| `apps/desktop/src/renderer/src/App.tsx` | hover 浮层显示来源和状态 |
-| `packages/mcp/src/tools.ts` | 发送事件时附带 `leaseId` |
-| `packages/cli/src/index.ts` | 发送事件时附带 `leaseId`（如适用） |
-| `packages/client/src/event-input.ts` | `OpenPetsEventInput` 支持 `leaseId` |
-
-## Steps
-
-### Step 1: Core 协议层改动
-
-- [x] `core/config.ts` — `OpenPetsConfig` 新增 `agents?: Record<string, string>`（agentType → pet id/displayName）
-- [x] `core/event.ts` — `OpenPetsEvent` 新增可选 `leaseId?: string`；新增 `parseSource(source: string)` 导出函数，返回 `{ agentType, detail }`
-- [x] `core/ipc.ts` — `OpenPetsHealthV2` 新增/替换 `activePets` 字段（数组，替代原来的 `activePet` 单值）
-- [x] `core/event.ts` — `validateOpenPetsEvent` 允许 `leaseId` 通过
-
-### Step 2: PetInstance 管理器（main.ts 核心重构）
-
-- [x] 定义 `PetInstance` 类型和 `PetInstanceManager`
-- [x] 实现：`createForLease(leaseId, source)` — 解析 source，查 agents 配置获取 pet，创建运行时状态
-- [x] 实现：`destroyForLease(leaseId)` — 清除 timer，关闭窗口，从 map 删除
-- [x] 实现：`ensureDefaultPet()` — 没有 lease 时保证至少 1 个默认宠物实例
-- [x] 实现：`getDefault()` — 返回默认宠物（第一个，或无 lease 的那个）
-- [x] 实现：`getByLeaseId(leaseId)` — 查询
-- [x] 配置解析：`resolvePet(agentType)` — 按 agents 配置匹配已安装 pet（先 id，再 displayName，找不到回退默认）
-
-### Step 3: 窗口管理重构
-
-- [x] 将 `createPetWindow()` 抽象为 `createWindowForInstance(instance: PetInstance)`
-- [x] 模块级变量 `mainWindow` → 移到 `getMainWindow()` 辅助函数
-- [x] `publishState()` 改为 `publishStateForInstance(instance)`
-
-### Step 4: 事件路由 & Lease 集成
-
-- [x] 修改 `applyEvent(event)`:
-- [x] 修改 `handleLease(params)`:
-- [x] `applyLeaseAction` 返回的 `LeaseResult` 携带足够信息让 `handleLease` 判断后续操作
-
-### Step 5: IPC health 响应更新
-
-- [x] `getIpcHealth()` 返回 `activePets` 数组而非 `activePet` 单值
-- [x] `activePets` 内容：`{ leaseId, agentType, detail, petName, state }`
-- [x] 保留 `activePet` 字段（deprecated）供老客户端兼容
-
-### Step 6: Renderer 改动
-
-- [x] `preload.ts` — `RendererPetState` 新增 `agentType?: string`、`detail?: string`
-- [x] `main.ts` publishState — 传递 `agentType` 和 `detail`
-- [x] `App.tsx` — 在 `.pet-container` 上添加 hover 浮层
-- [x] styles.css — 添加 `.source-hover` 样式
-
-### Step 7: 客户端改动（MCP & CLI）
-
-- [x] `mcp/tools.ts` — `openPetsSayTool` 和 `openPetsSetStateTool`:
-- [x] `cli/src/index.ts` — 不适用（CLI 无 lease 机制）
-- [x] `client/src/event-input.ts` — `OpenPetsEventInput` 支持 `leaseId` 透传
-
-## Reuse
-
-- `core/reducer.ts` — **不变**。每个 PetInstance 独立持有一个 `PetRuntimeState`，调用同一个 `reducePetEvent`
-- `core/lifecycle.ts` — lease 存储逻辑不变，`applyLeaseAction` 接口不变
-- `core/states.ts` — 完全不变
-- `core/codex-mapping.ts` — 完全不变
-- `packages/pet-format-codex/src/loader.ts` — 完全不变
-- `apps/desktop/src/ipc-server.ts` — 几乎不变，只需 `handleLease` 和 `applyEvent` 的签名调整
-- `apps/desktop/src/menu-actions/` — 不变
-- 窗口拖动/交互逻辑 — 复用现有 `handlePetInteraction`，per-window 触发
+| `packages/core/src/config.ts` | 新增 `agents` 配置 |
+| `packages/core/src/event.ts` | 新增 `leaseId` 和 `parseSource()` |
+| `packages/core/src/ipc.ts` | 新增 `activePets` / `multi-pet-v1` |
+| `packages/client/src/event-input.ts` | event input 支持 `leaseId` |
+| `packages/client/src/client.ts` | 保持显式透传，不做 lease 推断 |
+| `packages/mcp/src/tools.ts` | MCP 事件显式带 `leaseId` |
+| `apps/desktop/src/main.ts` | 多窗口、多 runtime、lease 生命周期、事件路由 |
+| `apps/desktop/src/preload.ts` | renderer state 增加 agent/display 字段 |
+| `apps/desktop/src/renderer/src/App.tsx` | hover 显示短标签 |
+| `apps/desktop/src/renderer/src/styles.css` | hover 样式 |
 
 ## Verification
 
-1. **单 Agent 回归**：启动桌面应用 → 1 个默认宠物 → MCP 连接 → 1 个宠物（外观不变）→ MCP 断开 → 恢复默认。与当前行为一致。
-2. **多 Agent**：启动 → Pi 连接（创建窗口 A，外观按配置）→ Claude Code 连接（创建窗口 B）→ 两个窗口各自独立动画 → Pi 断开 → 10s 后窗口 A 关闭 → 只剩窗口 B。
-3. **Cascade 定位**：连 5 个 Agent → 窗口不重叠 → 超出屏幕宽度自动换行。
-4. **Hover 显示**：鼠标悬停 → 显示 `Agent类型 · 项目名 — 状态`。
-5. **配置测试**：`agents: { "pi": "nonexistent" }` → Pi 连接 → fallback 默认外观。
-6. **老客户端兼容**：不带 `leaseId` 的事件 → 路由到默认宠物。
-7. **短暂断连**：lease heartbeat 中断 5 秒内重连 → 窗口不消失。
+已覆盖/需保持的测试点：
+
+1. Core event validation 保留 `leaseId`。
+2. Client 显式传 `leaseId` 时原样透传。
+3. Client acquire 后不会自动推断/补 `leaseId`。
+4. MCP acquire 后发送事件时带对应 `leaseId`。
+5. Desktop 手测：
+   - 多个 lease 创建多个窗口。
+   - event `leaseId` 命中对应窗口。
+   - event `source === leaseId` 命中对应窗口。
+   - 相同 agent + 相同目录 + 不同 session 不串消息。
+   - 拖动任意宠物只移动当前窗口。
+   - release 后对应窗口延迟关闭。
+
+## Non-goals
+
+- 不新增 event `id` 字段。
+- 不使用 `agentType/detail` 做事件路由。
+- 不在 `@open-pets/client` 中做 session 记忆或自动补路由字段。
+- 不持久化每个 lease 窗口位置。

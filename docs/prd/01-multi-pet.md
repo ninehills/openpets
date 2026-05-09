@@ -2,192 +2,130 @@
 
 ## 概述
 
-当前 OpenPets 为单宠物模式：所有 Agent（MCP / CLI / OpenCode）共享一个宠物窗口、一个状态机。本需求扩展为多宠物模式，每个 Agent 实例对应一个独立的桌面宠物窗口，不同 Agent 类型可映射不同外观。
-
----
+OpenPets 从单宠物模式扩展为多宠物模式：每个 active lease 对应一个独立桌面宠物窗口。不同 agent/session 的状态互不影响；没有 active lease 时仍保留一个默认宠物，保证单用户与旧事件路径可用。
 
 ## 用户故事
 
-1. **看到多个宠物同时工作** — 作为开发者，我同时开着 Claude Code 和 Pi，桌面上各有一个宠物独立展示各自的状态，看着热闹
-2. **不同 Agent 不同外观** — 我可以配置「Claude Code 用柴犬、Pi 用猫」，一眼就区分谁在干什么
-3. **向后兼容** — 单 Agent 用户（比如只装了 MCP）体验完全不变，仍然只有一个宠物
-4. **不要任何开关** — 多宠物是自然行为，不需要手动开启
-
----
+1. **多个 agent 同时可见** — 同时使用 Pi、Claude Code、MCP 等 agent 时，每个 session 有独立宠物反馈状态。
+2. **同 agent 同目录不串消息** — 两个 Pi session 即使 agent 名称和项目目录相同，也能通过不同 lease/source 精确路由到各自宠物。
+3. **不同 agent 可映射不同外观** — 可配置 agent type 到已安装 pet 的映射。
+4. **默认体验不变** — 没有 lease 或旧事件不带路由信息时，仍更新默认宠物。
 
 ## 行为规则
 
 ### 宠物数量
 
-```
-宠物数量 = max(1, 已连接 Agent 数)
+```txt
+宠物数量 = max(1, active lease 数)
 ```
 
-- **0 个 Agent 连接** → 1 个默认宠物，外观为默认 pet
-- **1 个 Agent 连接** → 1 个宠物，外观按配置映射；未配置则保持默认；宠物窗口不增不减
-- **N 个 Agent 连接** → N 个宠物，每个对应一个 lease
-- 最后一个 Agent 断开 → 宠物数量回到 1，切换回默认外观
+- 0 个 active lease：显示 1 个默认宠物。
+- 1 个 active lease：显示 1 个对应宠物。
+- N 个 active lease：显示 N 个独立宠物。
+- 最后一个 lease release/过期后：延迟关闭对应窗口，然后回到 1 个默认宠物。
 
 ### Agent 连接 / 断开
 
-- **连接**：Agent acquire lease 时，创建对应宠物窗口
-- **断开**：lease 过期或主动 release 时，延迟 10 秒后关闭对应窗口（避免短暂断连闪跳）
-- 同一 Agent 类型的多个实例（如两个 Claude Code 窗口）各自独立宠物
+- acquire lease：创建对应宠物窗口；如果只存在默认宠物，则替换为 lease 宠物。
+- heartbeat：取消该 lease 的延迟关闭 timer。
+- release：10 秒后关闭对应宠物窗口，避免短暂断连导致闪烁。
+- 同 agent、同目录、多 session：只要 lease id 不同，就创建不同宠物。
+
+### 事件路由
+
+事件路由按稳定 session key 精确匹配：
+
+1. 优先使用 `event.leaseId` 匹配 `PetInstance.leaseId`。
+2. 其次使用 `event.source` 精确匹配 `PetInstance.leaseId`。
+3. 都没有或匹配失败时，fallback 到默认宠物。
+
+第二条用于兼容旧 `@open-pets/client/core`：旧版本会保留 `source`，但会剥掉未知的 `leaseId`。因此 Pi 等客户端可以将 `source` 设置为与 lease id 相同的值，实现低改动精确路由。
+
+### source 与展示
+
+`source` 不再做 agentType/detail 的模糊路由。推荐约定：
+
+- 路由用 source：`source = leaseId`，例如 `pi:openpets:<session>`。
+- 展示用 lease label：例如 `Pi Agent - openpets`。
+
+Hover 显示短标签：
+
+```txt
+AgentName(project) — state
+```
+
+例如：`Pi Agent(openpets) — working`。
 
 ### 窗口布局
 
-- 新宠物窗口从默认位置 `(x₀, y₀)` 开始级联偏移
-- 偏移步长：120px（右下方向）
-- 行宽限制：`floor((screenWidth - x₀) / 120)` 个窗口，超出换行
-- Y 超出屏幕底边时回到 `y₀`
-- 每个窗口独立可拖拽，位置不持久化
-
-### Hover 信息
-
-鼠标悬停在宠物上时，浮层显示：
-
-```
-Agent类型 · 项目名 — 当前状态
-```
-
-例如：`Pi · openpets — thinking`
-
----
+- 新窗口从默认位置开始级联偏移。
+- 偏移步长：120px。
+- 超出屏幕宽度自动换行；超出底部回绕。
+- 每个窗口独立可拖拽；默认窗口位置可持久化，lease 窗口位置不持久化。
 
 ## 配置
 
-位置：`~/.openpets/config.json`（已有文件，新增 `agents` 字段）
+`OpenPetsConfig` 新增可选字段：
 
 ```json
 {
   "agents": {
     "pi": "cat-pet",
-    "claude-code": "slayer"
+    "mcp": "slayer"
   }
 }
 ```
 
-- 键为 `agentType`（从 `source` 字段解析，见下文）
-- 值为已安装 pet 的 `id`（即 `~/.openpets/pets/<id>` 的目录名）或 `displayName`
-- 未配置的 agentType 使用默认宠物
-- 配置可选，不配 = 全用默认
-- 查找时优先匹配 `id`，再匹配 `displayName`；找不到则 fallback 默认
-
----
+- key：agentType，来自展示 source/label 的第一个 `:` 前缀。
+- value：已安装 pet 的 `id` 或 `displayName`。
+- 找不到映射时 fallback 默认宠物。
 
 ## 数据模型
 
-### source 字段约定
-
-现有协议中 `source` 为自由字符串。多宠物模式下约定格式：
-
-```
-agentType:detail
-```
-
-| source 示例 | agentType | detail |
-|---|---|---|
-| `pi:openpets` | `pi` | `openpets` |
-| `claude-code:myproject` | `claude-code` | `myproject` |
-| `mcp` | `mcp` | `""`（老格式兼容） |
-
-- 解析规则：取第一个 `:` 之前为 `agentType`，之后为 `detail`；无冒号时整个为 `agentType`
-- `detail` 用于 hover 信息中的项目名显示，以及区分同类型多实例
-
-### 事件路由
-
-事件请求新增可选字段 `leaseId`：
-
-```typescript
-// 当前
-{ id, method: "event", params: { type, state, source, message?, tool? } }
-
-// 新增
-{ id, method: "event", params: { type, state, source, leaseId?, message?, tool? } }
-```
-
-- `leaseId` 可选 — 不带时路由到默认宠物（向后兼容）
-- 带 `leaseId` 时路由到对应 lease 的宠物窗口
-- 客户端（Pi 扩展、MCP server）各自持有 `leaseId`，发事件时附带
-
-### 宠物实例状态
-
-```typescript
+```ts
 type PetInstance = {
   leaseId: string;
-  agentType: string;        // 从 source 解析
-  detail: string;           // 从 source 解析
-  petPath: string | null;   // null = 默认宠物
-  runtime: PetRuntimeState; // 每个宠物独立的状态机
-  window: BrowserWindow;
-  disconnectTimer?: NodeJS.Timeout; // 延迟关闭计时器
+  agentType: string;
+  detail: string;
+  pet: LoadedCodexPet | null;
+  runtime: PetRuntimeState;
+  window: BrowserWindow | null;
+  rendererReady: boolean;
+  expirationTimer: ReturnType<typeof setTimeout> | null;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
 };
 ```
 
-### IPC /health 响应
+## IPC / health
 
-`health` 响应中的 `activePet` 改为 `activePets` 数组：
+`health` 保留 deprecated `activePet`，新增 `activePets`：
 
-```typescript
-{
-  // ... 原有字段
-  activePets: Array<{
-    leaseId: string;
-    agentType: string;
-    detail: string;
-    petName: string | null;
-    state: OpenPetsState;
-  }>;
-}
+```ts
+activePets: Array<{
+  leaseId: string;
+  agentType: string;
+  detail: string;
+  petName: string | null;
+  state: OpenPetsState;
+}>;
 ```
 
----
+capabilities 增加：
 
-## 技术方案
-
-### 涉及模块
-
-| 模块 | 改动 |
-|---|---|
-| `core/lifecycle.ts` | lease acquire → 触发创建 Pet 窗口；release → 触发延迟关闭 |
-| `core/event.ts` | `OpenPetsEvent` 新增可选 `leaseId` 字段 |
-| `core/reducer.ts` | **不变** — 每个 Pet 实例独立持有一个 reducer |
-| `core/ipc.ts` | `health` 响应结构调整 |
-| `core/config.ts` | `OpenPetsConfig` 新增 `agents` 字段 |
-| `apps/desktop/src/main.ts` | 多窗口管理、外观映射、级联定位、hover 信息 |
-| `apps/desktop/src/preload.ts` | **不变** — per-window IPC 机制不变 |
-| `apps/desktop/src/renderer/src/App.tsx` | hover 浮层增加来源和状态显示 |
-| `packages/client/src/client.ts` | **不变** |
-| `packages/mcp/src/tools.ts` | 发送事件时附带 `leaseId`；source 可选结构化 |
-| `packages/cli/src/index.ts` | 发送事件时附带 `leaseId`；source 可选结构化 |
-
-### 不涉及
-
-- pet-format-codex（不碰）
-- pet 安装流程（不变）
-- tray 菜单（保持单宠物逻辑，可后续扩展）
-- speech / safety 限流（per-pet 独立，但机制不变）
-- 窗口拖动和交互（已有逻辑 per-window 复用）
-
-### 风险
-
-- **多 BrowserWindow 内存开销**：每个宠物窗口 ~20-30MB，3 个 Agent 约 60-90MB，可接受
-- **单实例锁**：当前 `requestSingleInstanceLock()` 只允许一个 OpenPets 进程，多宠物只是多窗口，不影响
-- **老客户端兼容**：不带 `leaseId` 的事件走默认宠物，老 MCP 和 CLI 正常工作
-
----
+```txt
+multi-pet-v1
+```
 
 ## 行为边界
 
 | 场景 | 预期 |
 |---|---|
-| 仅启动桌面应用，无 Agent 连接 | 1 个默认宠物 |
-| 1 个 MCP Agent 连接 | 1 个宠物，外观按配置映射 |
-| 2 个 Agent（Pi + MCP）连接 | 2 个独立宠物窗口 |
-| Agent 断开，仍有其他 Agent | 对应窗口在 10 秒后关闭，其他不受影响 |
-| 最后一个 Agent 断开 | 窗口保留，外观切回默认宠物 |
-| 同一类型 2 个实例（两个 Claude Code） | 2 个独立窗口，各自独立状态机 |
-| Agent 短暂断连后重连 | 延迟关闭计时器被取消，窗口不闪烁 |
-| 配置中指定了不存在的 pet 路径 | fallback 到默认宠物 |
-| 老客户端不带 `leaseId` 发事件 | 路由到第一个宠物（默认），行为不变 |
-| 屏幕空间不足以级联偏移 | 自动换行，超出底部回绕 |
+| 仅启动桌面，无 lease | 1 个默认宠物 |
+| 1 个 lease acquire | 1 个对应宠物 |
+| N 个 lease acquire | N 个独立宠物 |
+| event 带 `leaseId` | 路由到对应 lease 宠物 |
+| event 不带 `leaseId` 但 `source === leaseId` | 路由到对应 lease 宠物 |
+| event 无路由信息 | fallback 默认宠物 |
+| 同 agent 同目录两个 session | 通过不同 lease/source 更新各自宠物 |
+| release 一个 lease | 10 秒后关闭对应窗口 |
+| 最后一个 lease release | 回到默认宠物 |

@@ -602,7 +602,7 @@ async function handleLease(params: LeaseParams) {
     throw error;
   }
   if (params.action === "acquire") {
-    await createForLease(params.id, getSourceForLease(params.id, params.client));
+    await createForLease(params.id, params.id);
   } else if (params.action === "heartbeat") {
     const instance = petInstances.get(params.id);
     if (instance?.disconnectTimer) {
@@ -624,17 +624,9 @@ function applyEvent(event: OpenPetsEvent) {
   scheduleExpirationForInstance(instance);
 }
 
-function getSourceForLease(leaseId: string, client: string) {
-  const parsed = parseSource(leaseId);
-  if (parsed.detail) {
-    const firstDetailPart = parsed.detail.split(":", 1)[0] || parsed.detail;
-    return `${parsed.agentType}:${firstDetailPart}`;
-  }
-  return `${client}:${leaseId}`;
-}
-
 function getInstanceForEvent(event: OpenPetsEvent) {
   if (event.leaseId) return petInstances.get(event.leaseId) ?? getDefaultInstance();
+  if (event.source) return petInstances.get(event.source) ?? getDefaultInstance();
   return getDefaultInstance();
 }
 
