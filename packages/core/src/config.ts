@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 
 export type OpenPetsConfig = {
   petPath?: string;
+  agents?: Record<string, string>;
   position?: { x: number; y: number };
   scale?: number;
   hidden?: boolean;

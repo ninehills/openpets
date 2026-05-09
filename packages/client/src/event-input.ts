@@ -12,6 +12,7 @@ export type OpenPetsEventInput =
   | {
       state: OpenPetsState;
       source?: string;
+      leaseId?: string;
       type?: string;
       message?: string;
       tool?: string;
@@ -28,6 +29,7 @@ export function normalizeEventInput(input: OpenPetsEventInput): OpenPetsEvent {
   const event = createManualEvent(input.state, {
     source: input.source ?? "client",
     type: input.type ?? `state.${input.state}`,
+    ...(input.leaseId ? { leaseId: input.leaseId } : {}),
     ...(input.message ? { message: input.message } : {}),
     ...(input.tool ? { tool: input.tool } : {}),
   });

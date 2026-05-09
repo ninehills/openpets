@@ -76,6 +76,32 @@ body,
   transform: scale(var(--pet-scale, 0.5));
 }
 
+.source-hover {
+  grid-row: 1;
+  position: absolute;
+  top: 8px;
+  z-index: 3;
+  max-width: min(160px, calc(100vw - 8px));
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgb(17 24 39 / 0.86);
+  color: #fff;
+  font-size: 10px;
+  line-height: 12px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pet-container:hover .source-hover {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 .speech-bubble {
   grid-row: 1;
   position: relative;

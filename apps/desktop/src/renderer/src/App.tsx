@@ -44,9 +44,12 @@ export function App() {
     return () => clearTimeout(timeout);
   }, [petState.event?.message, petState.event?.timestamp, petState.event?.state]);
 
+  const hoverLabel = `${formatAgentLabel(petState.agentType, petState.detail)} — ${petState.state}`;
+
   return (
     <main className="overlay-shell">
       <div className="pet-container">
+        <div className="source-hover">{hoverLabel}</div>
         {visibleMessage ? <div className="speech-bubble">{visibleMessage}</div> : null}
         <PetSprite
           state={petState.state}
@@ -58,6 +61,12 @@ export function App() {
       </div>
     </main>
   );
+}
+
+function formatAgentLabel(agentType?: string, detail?: string) {
+  const agentName = agentType?.trim() || "OpenPets";
+  const project = detail?.trim();
+  return project ? `${agentName}(${project})` : agentName;
 }
 
 function PetSprite({ state, scale, spritesheetUrl }: { state: OpenPetsState; scale: number; spritesheetUrl?: string }) {

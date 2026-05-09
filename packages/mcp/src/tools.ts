@@ -219,10 +219,11 @@ export async function openPetsSayTool(client: OpenPetsToolClient, limiter: Speec
   if (!limiter.allow(validation.message)) return jsonResult({ sent: false, reason: "rate-limited" });
 
   try {
-    await leaseManager?.heartbeat().catch(() => false);
+    await ensureLeaseForEvent(leaseManager);
     const result = await client.sendEvent({
       state,
-      source: "mcp",
+      source: leaseManager?.leaseId ?? "mcp",
+      ...(leaseManager?.leaseAcquired ? { leaseId: leaseManager.leaseId } : {}),
       type: "mcp.say",
       message: validation.message,
       timestamp: Date.now(),
@@ -265,16 +266,23 @@ async function acquireLeaseIfSupported(health: Awaited<ReturnType<typeof readHea
 export async function openPetsSetStateTool(client: OpenPetsToolClient, state: unknown, leaseManager?: OpenPetsLeaseManager): Promise<CallToolResult> {
   if (!isOpenPetsState(state)) return toolError("Invalid OpenPets state.");
   try {
-    await leaseManager?.heartbeat().catch(() => false);
+    await ensureLeaseForEvent(leaseManager);
     const result = await client.sendEvent({
       state,
-      source: "mcp",
+      source: leaseManager?.leaseId ?? "mcp",
+      ...(leaseManager?.leaseAcquired ? { leaseId: leaseManager.leaseId } : {}),
       type: `mcp.state.${state}`,
     });
     return jsonResult({ state: result.state });
   } catch {
     return toolError("OpenPets state update failed.");
   }
+}
+
+async function ensureLeaseForEvent(leaseManager: OpenPetsLeaseManager | undefined) {
+  if (!leaseManager) return false;
+  if (leaseManager.leaseAcquired) return leaseManager.heartbeat().catch(() => false);
+  return leaseManager.acquire().catch(() => false);
 }
 
 function jsonResult(value: unknown): CallToolResult {

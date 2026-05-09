@@ -5,15 +5,32 @@ export const MAX_TYPE_LENGTH = 80;
 export const MAX_SOURCE_LENGTH = 80;
 export const MAX_MESSAGE_LENGTH = 240;
 export const MAX_TOOL_LENGTH = 80;
+export const MAX_EVENT_LEASE_ID_LENGTH = 120;
+
+export type ParsedOpenPetsSource = {
+  agentType: string;
+  detail: string;
+};
 
 export type OpenPetsEvent = {
   type: string;
   state: OpenPetsState;
   source?: string;
+  leaseId?: string;
   message?: string;
   tool?: string;
   timestamp?: number;
 };
+
+export function parseSource(source = "default"): ParsedOpenPetsSource {
+  const trimmed = source.trim() || "default";
+  const separator = trimmed.indexOf(":");
+  if (separator < 0) return { agentType: trimmed, detail: "" };
+  return {
+    agentType: trimmed.slice(0, separator).trim() || "default",
+    detail: trimmed.slice(separator + 1).trim(),
+  };
+}
 
 export type EventValidationResult =
   | { ok: true; event: OpenPetsEvent }
@@ -63,6 +80,9 @@ export function validateOpenPetsEvent(input: unknown): EventValidationResult {
   const source = optionalString(record.source, "source", MAX_SOURCE_LENGTH);
   if (typeof source === "object") return { ok: false, error: source.error };
 
+  const leaseId = optionalString(record.leaseId, "leaseId", MAX_EVENT_LEASE_ID_LENGTH);
+  if (typeof leaseId === "object") return { ok: false, error: leaseId.error };
+
   const message = optionalString(record.message, "message", MAX_MESSAGE_LENGTH);
   if (typeof message === "object") return { ok: false, error: message.error };
 
@@ -83,6 +103,7 @@ export function validateOpenPetsEvent(input: unknown): EventValidationResult {
       type,
       state: record.state,
       ...(source ? { source } : {}),
+      ...(leaseId ? { leaseId } : {}),
       ...(message ? { message } : {}),
       ...(tool ? { tool } : {}),
       ...(timestamp === undefined ? {} : { timestamp }),
@@ -98,6 +119,7 @@ export function createManualEvent(
     type: options.type ?? `state.${state}`,
     state,
     source: options.source ?? "cli",
+    ...(options.leaseId ? { leaseId: options.leaseId } : {}),
     ...(options.message ? { message: options.message } : {}),
     ...(options.tool ? { tool: options.tool } : {}),
     timestamp: options.timestamp ?? Date.now(),

@@ -30,6 +30,20 @@ describe("@open-pets/client IPC", () => {
     await expect(client.getHealth()).rejects.toMatchObject({ code: "not-openpets" });
   });
 
+  it("passes lease ids through event input", async () => {
+    let body: unknown;
+    const endpoint = await startIpcServer({
+      health: () => validHealth(),
+      event: (event) => { body = event; return { state: event.state }; },
+      window: () => ({}),
+    });
+    const client = createOpenPetsClient({ endpoint });
+
+    await client.sendEvent({ state: "working", leaseId: "mcp:one" });
+
+    expect(body).toMatchObject({ state: "working", leaseId: "mcp:one" });
+  });
+
   it("verifies health before sending events", async () => {
     const counts = { health: 0, event: 0 };
     const endpoint = await startIpcServer({
@@ -149,6 +163,23 @@ describe("@open-pets/client IPC", () => {
     ]);
   });
 
+  it("does not infer lease ids after acquire", async () => {
+    const bodies: unknown[] = [];
+    const endpoint = await startIpcServer({
+      health: () => validHealth(),
+      event: (event) => { bodies.push(event); return { state: event.state }; },
+      window: () => ({}),
+      lease: (params) => ({ action: params.action, activeLeases: 1, managed: true, leaseActive: params.action !== "release", changed: true }),
+    });
+    const client = createOpenPetsClient({ endpoint });
+
+    await client.leaseAcquire({ id: "cli:pi-session-1", client: "cli", label: "Pi Agent - openpets" });
+    await client.sendEvent({ state: "working", source: "cli:Pi Agent - openpets" });
+
+    expect(bodies[0]).toMatchObject({ state: "working", source: "cli:Pi Agent - openpets" });
+    expect(bodies[0]).not.toHaveProperty("leaseId");
+  });
+
   it("rejects invalid lease responses", async () => {
     const endpoint = await startIpcServer({ health: () => validHealth(), event: () => ({}), window: () => ({}), lease: () => ({ action: "acquire" }) });
     const client = createOpenPetsClient({ endpoint });
@@ -195,6 +226,7 @@ function validHealth() {
     capabilities: ["event-v2", "window-v1", "speech-v1", "lease-v1"],
     ready: true,
     activePet: "slayer",
+    activePets: [{ leaseId: "__default__", agentType: "default", detail: "", petName: "slayer", state: "idle" }],
     activeLeases: 0,
     managed: false,
   };

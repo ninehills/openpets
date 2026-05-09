@@ -2,6 +2,7 @@ import { mkdir, lstat, stat, chmod } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { createConnection, type Socket } from "node:net";
 import { validateOpenPetsEvent, type OpenPetsEvent } from "./event.js";
+import type { OpenPetsState } from "./states.js";
 import { validateLeaseParams, type LeaseParams } from "./lifecycle.js";
 
 export const OPENPETS_IPC_PROTOCOL_VERSION = 2;
@@ -33,15 +34,24 @@ export type IpcErrorCode =
   | "timeout"
   | "internal-error";
 
+export type OpenPetsHealthPet = {
+  leaseId: string;
+  agentType: string;
+  detail: string;
+  petName: string | null;
+  state: OpenPetsState;
+};
+
 export type OpenPetsHealthV2 = {
   app: "openpets";
   ok: true;
   version: string;
   protocolVersion: 2;
   transport: "ipc";
-  capabilities: Array<"event-v2" | "window-v1" | "speech-v1" | "lease-v1" | "pet-v1">;
+  capabilities: Array<"event-v2" | "window-v1" | "speech-v1" | "lease-v1" | "pet-v1" | "multi-pet-v1">;
   ready: boolean;
   activePet: string | null;
+  activePets: OpenPetsHealthPet[];
   activeLeases: number;
   managed: boolean;
   debug?: boolean;

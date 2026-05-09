@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, screen, session, shell, Tray } from "electron";
-import type { MenuItemConstructorOptions, Rectangle } from "electron";
+import type { MenuItemConstructorOptions, Rectangle, WebContents } from "electron";
 import {
   createInitialPetRuntimeState,
   createLifecycleLeaseState,
@@ -14,7 +14,9 @@ import {
   reducePetEvent,
   tickPetState,
   type LeaseParams,
+  parseSource,
   type OpenPetsEvent,
+  type PetRuntimeState,
 } from "@open-pets/core";
 import type { OpenPetsHealthV2, OpenPetsWindowAction } from "@open-pets/core/ipc";
 import {
@@ -47,21 +49,35 @@ const SPEECH_BUBBLE_MAX_OUTER_WIDTH = 168;
 const MIN_WINDOW_WIDTH = 128;
 const DEFAULT_PET_SCALE = 1;
 const STARTER_PET_ID = "slayer";
+const DEFAULT_INSTANCE_ID = "__default__";
+const DISCONNECT_CLOSE_DELAY_MS = 10_000;
+const CASCADE_OFFSET_PX = 120;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+type PetInstance = {
+  leaseId: string;
+  agentType: string;
+  detail: string;
+  pet: LoadedCodexPet | null;
+  runtime: PetRuntimeState;
+  window: BrowserWindow | null;
+  rendererReady: boolean;
+  expirationTimer: ReturnType<typeof setTimeout> | null;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
+};
+
 let mainWindow: BrowserWindow | null = null;
-let runtimeState = createInitialPetRuntimeState();
 let lifecycleState = createLifecycleLeaseState({ managed: false });
 let activePet: LoadedCodexPet | null = null;
+let defaultPet: LoadedCodexPet | null = null;
 let installedPets: LoadedCodexPet[] = [];
+let petInstances = new Map<string, PetInstance>();
 let config: OpenPetsConfig = {};
-let expirationTimer: ReturnType<typeof setTimeout> | null = null;
 let ipcServerHandle: DesktopIpcServerHandle | null = null;
 let tray: Tray | null = null;
 let debugMode = isDebugEnabled(process.argv);
-let dragState: { startCursor: { x: number; y: number }; startBounds: Rectangle } | null = null;
-let rendererReady = false;
+let dragState: { window: BrowserWindow; startCursor: { x: number; y: number }; startBounds: Rectangle } | null = null;
 
 if (process.platform === "darwin") {
   // OpenPets does not store secrets. Avoid Chromium initializing macOS
@@ -120,9 +136,9 @@ app.whenReady().then(async () => {
   installedPets = await loadInstalledPets();
   await startLocalIpcServer();
   createTray();
-  await createPetWindow();
+  await ensureDefaultPet();
   await maybeOpenOnboardingWindow(process.argv);
-  publishState();
+  publishAllStates();
 });
 
 app.on("before-quit", () => {
@@ -133,28 +149,36 @@ app.on("window-all-closed", () => {
   // Keep the pet process alive unless the user explicitly quits.
 });
 
-ipcMain.on("renderer-ready", () => {
-  rendererReady = true;
-  publishState();
+ipcMain.on("renderer-ready", (event) => {
+  const instance = getInstanceByWebContents(event.sender);
+  if (instance) {
+    instance.rendererReady = true;
+    publishStateForInstance(instance);
+  }
 });
 ipcMain.on("window-action", (_event, action: unknown) => {
   if (isWindowAction(action)) {
     void handleWindowAction(action);
   }
 });
-ipcMain.on("pet-interaction", (_event, interaction: unknown) => handlePetInteraction(interaction));
+ipcMain.on("pet-interaction", (event, interaction: unknown) => handlePetInteraction(event.sender, interaction));
 
 async function createPetWindow() {
+  await ensureDefaultPet();
+}
+
+async function createWindowForInstance(instance: PetInstance) {
   const display = screen.getPrimaryDisplay();
   const { workArea } = display;
   const windowSize = getWindowContentSize();
-  const initialPosition = config.position ?? {
-    x: workArea.x + workArea.width - windowSize.width - 24,
-    y: workArea.y + workArea.height - windowSize.height - 24,
-  };
-  const position = clampWindowPosition(initialPosition, windowSize);
+  const position = instance.leaseId === DEFAULT_INSTANCE_ID
+    ? clampWindowPosition(config.position ?? {
+        x: workArea.x + workArea.width - windowSize.width - 24,
+        y: workArea.y + workArea.height - windowSize.height - 24,
+      }, windowSize)
+    : getCascadePosition();
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: windowSize.width,
     height: windowSize.height,
     useContentSize: true,
@@ -184,49 +208,62 @@ async function createPetWindow() {
     },
   });
 
-  debugLog("created window", { position, bounds: mainWindow.getBounds() });
-  mainWindow.on("moved", () => void saveWindowPosition());
-  mainWindow.webContents.on("did-finish-load", () => {
-    debugLog("renderer did-finish-load");
-    showPetWindow("did-finish-load");
-    publishState();
+  instance.window = window;
+  if (instance.leaseId === DEFAULT_INSTANCE_ID || !mainWindow) mainWindow = window;
+  debugLog("created window", { leaseId: instance.leaseId, position, bounds: window.getBounds() });
+  window.on("moved", () => {
+    if (instance.leaseId === DEFAULT_INSTANCE_ID) void saveWindowPosition(window);
   });
-  mainWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+  window.on("closed", () => {
+    instance.window = null;
+    if (mainWindow === window) mainWindow = getMainWindow();
+  });
+  window.webContents.on("did-finish-load", () => {
+    debugLog("renderer did-finish-load", { leaseId: instance.leaseId });
+    showPetWindowForInstance(instance, "did-finish-load");
+    publishStateForInstance(instance);
+  });
+  window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
     debugLog("renderer did-fail-load", { errorCode, errorDescription, validatedURL });
   });
-  mainWindow.once("ready-to-show", () => {
-    debugLog("window ready-to-show");
-    showPetWindow("ready-to-show");
+  window.once("ready-to-show", () => {
+    debugLog("window ready-to-show", { leaseId: instance.leaseId });
+    showPetWindowForInstance(instance, "ready-to-show");
   });
-  hardenWindowNavigation(mainWindow);
+  hardenWindowNavigation(window);
 
   try {
     if (app.isPackaged) {
-      await mainWindow.loadFile(join(__dirname, "renderer", "index.html"));
+      await window.loadFile(join(__dirname, "renderer", "index.html"));
     } else {
-      await mainWindow.loadURL("http://127.0.0.1:5173");
+      await window.loadURL("http://127.0.0.1:5173");
     }
   } catch (error) {
     const fallbackRenderer = join(__dirname, "renderer", "index.html");
     console.error(`OpenPets renderer load failed; trying built renderer. ${String(error)}`);
-    await mainWindow.loadFile(fallbackRenderer).catch((fallbackError) => {
+    await window.loadFile(fallbackRenderer).catch((fallbackError) => {
       console.error(`OpenPets built renderer load failed. ${String(fallbackError)}`);
     });
   }
-  showPetWindow("post-load");
-  if (debugMode) mainWindow.webContents.openDevTools({ mode: "detach" });
+  showPetWindowForInstance(instance, "post-load");
+  if (debugMode) window.webContents.openDevTools({ mode: "detach" });
 }
 
 function showPetWindow(reason: string) {
-  if (!mainWindow || config.hidden) return;
-  mainWindow.setAlwaysOnTop(true, "floating");
+  for (const instance of petInstances.values()) showPetWindowForInstance(instance, reason);
+}
+
+function showPetWindowForInstance(instance: PetInstance, reason: string) {
+  const window = instance.window;
+  if (!window || config.hidden) return;
+  window.setAlwaysOnTop(true, "floating");
   if (debugMode) {
-    mainWindow.show();
-    mainWindow.focus();
+    window.show();
+    window.focus();
   } else {
-    mainWindow.showInactive();
+    window.showInactive();
   }
-  debugLog("show window", { reason, visible: mainWindow.isVisible(), bounds: mainWindow.getBounds() });
+  debugLog("show window", { reason, leaseId: instance.leaseId, visible: window.isVisible(), bounds: window.getBounds() });
 }
 
 function hideDockIcon() {
@@ -421,6 +458,112 @@ async function startLocalIpcServer() {
   }
 }
 
+async function ensureDefaultPet() {
+  if (petInstances.size > 0) return;
+  const instance = createPetInstance(DEFAULT_INSTANCE_ID, "default", defaultPet);
+  petInstances.set(instance.leaseId, instance);
+  await createWindowForInstance(instance);
+}
+
+async function createForLease(leaseId: string, source: string) {
+  const existing = petInstances.get(leaseId);
+  if (existing) {
+    if (existing.disconnectTimer) {
+      clearTimeout(existing.disconnectTimer);
+      delete existing.disconnectTimer;
+    }
+    return existing;
+  }
+  if (petInstances.size === 1 && petInstances.has(DEFAULT_INSTANCE_ID)) {
+    destroyForLease(DEFAULT_INSTANCE_ID);
+  }
+  const instance = createPetInstance(leaseId, source, await resolvePetForSource(source));
+  petInstances.set(leaseId, instance);
+  await createWindowForInstance(instance);
+  return instance;
+}
+
+function createPetInstance(leaseId: string, source: string, pet: LoadedCodexPet | null): PetInstance {
+  const parsed = parseSource(source);
+  return {
+    leaseId,
+    agentType: parsed.agentType,
+    detail: parsed.detail,
+    pet,
+    runtime: createInitialPetRuntimeState(),
+    window: null,
+    rendererReady: false,
+    expirationTimer: null,
+  };
+}
+
+function scheduleDestroyForLease(leaseId: string) {
+  const instance = petInstances.get(leaseId);
+  if (!instance || leaseId === DEFAULT_INSTANCE_ID) return;
+  if (instance.disconnectTimer) clearTimeout(instance.disconnectTimer);
+  instance.disconnectTimer = setTimeout(() => {
+    destroyForLease(leaseId);
+    void ensureDefaultPet();
+  }, DISCONNECT_CLOSE_DELAY_MS);
+  instance.disconnectTimer.unref?.();
+}
+
+function destroyForLease(leaseId: string, closeWindow = true) {
+  const instance = petInstances.get(leaseId);
+  if (!instance) return;
+  if (instance.expirationTimer) clearTimeout(instance.expirationTimer);
+  if (instance.disconnectTimer) clearTimeout(instance.disconnectTimer);
+  if (closeWindow) instance.window?.close();
+  petInstances.delete(leaseId);
+  mainWindow = getMainWindow();
+}
+
+function getMainWindow() {
+  return petInstances.get(DEFAULT_INSTANCE_ID)?.window ?? petInstances.values().next().value?.window ?? null;
+}
+
+function getDefaultInstance() {
+  return petInstances.get(DEFAULT_INSTANCE_ID) ?? petInstances.values().next().value ?? null;
+}
+
+function getInstanceByWebContents(contents: WebContents) {
+  for (const instance of petInstances.values()) {
+    if (instance.window?.webContents === contents) return instance;
+  }
+  return null;
+}
+
+function setDefaultPet(pet: LoadedCodexPet) {
+  activePet = pet;
+  defaultPet = pet;
+  const defaultInstance = petInstances.get(DEFAULT_INSTANCE_ID);
+  if (defaultInstance) defaultInstance.pet = pet;
+}
+
+async function resolvePetForSource(source: string) {
+  const { agentType } = parseSource(source);
+  const configured = config.agents?.[agentType];
+  if (!configured) return defaultPet;
+  const found = installedPets.find((pet) => pet.id === configured || pet.displayName === configured);
+  return found ?? defaultPet;
+}
+
+function getCascadePosition() {
+  const display = screen.getPrimaryDisplay();
+  const { workArea } = display;
+  const windowSize = getWindowContentSize();
+  const base = config.position ?? {
+    x: workArea.x + workArea.width - windowSize.width - 24,
+    y: workArea.y + workArea.height - windowSize.height - 24,
+  };
+  const index = Math.max(0, petInstances.size);
+  const columns = Math.max(1, Math.floor((workArea.x + workArea.width - base.x) / CASCADE_OFFSET_PX));
+  const x = base.x + (index % columns) * CASCADE_OFFSET_PX;
+  let y = base.y + Math.floor(index / columns) * CASCADE_OFFSET_PX;
+  if (y + windowSize.height > workArea.y + workArea.height) y = base.y;
+  return clampWindowPosition({ x, y }, windowSize);
+}
+
 function getIpcHealth(): OpenPetsHealthV2 {
   return {
     app: "openpets",
@@ -428,9 +571,16 @@ function getIpcHealth(): OpenPetsHealthV2 {
     version: app.getVersion(),
     protocolVersion: 2,
     transport: "ipc",
-    capabilities: ["event-v2", "window-v1", "speech-v1", "lease-v1", "pet-v1"],
-    ready: Boolean(mainWindow && rendererReady && activePet),
-    activePet: activePet?.id ?? null,
+    capabilities: ["event-v2", "window-v1", "speech-v1", "lease-v1", "pet-v1", "multi-pet-v1"],
+    ready: Array.from(petInstances.values()).some((instance) => instance.window && instance.rendererReady && instance.pet),
+    activePet: getDefaultInstance()?.pet?.id ?? null,
+    activePets: Array.from(petInstances.values()).map((instance) => ({
+      leaseId: instance.leaseId,
+      agentType: instance.agentType,
+      detail: instance.detail,
+      petName: instance.pet?.id ?? null,
+      state: instance.runtime.rendered,
+    })),
     activeLeases: getActiveLeaseCount(lifecycleState),
     managed: lifecycleState.managed,
     debug: debugMode,
@@ -444,30 +594,68 @@ function getIpcHealth(): OpenPetsHealthV2 {
   };
 }
 
-function handleLease(params: LeaseParams) {
+async function handleLease(params: LeaseParams) {
   const result = applyLeaseAction(lifecycleState, params);
   if (!result.ok) {
     const error = new Error(result.error) as Error & { code: "invalid-params" };
     error.code = "invalid-params";
     throw error;
   }
+  if (params.action === "acquire") {
+    await createForLease(params.id, getSourceForLease(params.id, params.client));
+  } else if (params.action === "heartbeat") {
+    const instance = petInstances.get(params.id);
+    if (instance?.disconnectTimer) {
+      clearTimeout(instance.disconnectTimer);
+      delete instance.disconnectTimer;
+    }
+  } else if (params.action === "release") {
+    scheduleDestroyForLease(params.id);
+  }
   updateTrayMenu();
   return result.result;
 }
 
 function applyEvent(event: OpenPetsEvent) {
-  runtimeState = reducePetEvent(tickPetState(runtimeState), event);
-  publishState();
-  scheduleExpiration();
+  const instance = getInstanceForEvent(event);
+  if (!instance) return;
+  instance.runtime = reducePetEvent(tickPetState(instance.runtime), event);
+  publishStateForInstance(instance);
+  scheduleExpirationForInstance(instance);
+}
+
+function getSourceForLease(leaseId: string, client: string) {
+  const parsed = parseSource(leaseId);
+  if (parsed.detail) {
+    const firstDetailPart = parsed.detail.split(":", 1)[0] || parsed.detail;
+    return `${parsed.agentType}:${firstDetailPart}`;
+  }
+  return `${client}:${leaseId}`;
+}
+
+function getInstanceForEvent(event: OpenPetsEvent) {
+  if (event.leaseId) return petInstances.get(event.leaseId) ?? getDefaultInstance();
+  return getDefaultInstance();
 }
 
 function publishState() {
-  resizeWindowForCurrentScale();
-  mainWindow?.webContents.send("pet-state", {
-    state: runtimeState.rendered,
-    event: runtimeState.event,
-    activePet: activePet ? { ...activePet, spritesheetUrl: pathToFileURL(activePet.spritesheetPath).href } : null,
+  publishAllStates();
+}
+
+function publishAllStates() {
+  for (const instance of petInstances.values()) publishStateForInstance(instance);
+  updateTrayMenu();
+}
+
+function publishStateForInstance(instance: PetInstance) {
+  resizeWindowForCurrentScale(instance.window ?? undefined);
+  instance.window?.webContents.send("pet-state", {
+    state: instance.runtime.rendered,
+    event: instance.runtime.event,
+    activePet: instance.pet ? { ...instance.pet, spritesheetUrl: pathToFileURL(instance.pet.spritesheetPath).href } : null,
     scale: normalizeScale(config.scale),
+    agentType: instance.agentType,
+    detail: instance.detail,
   });
   updateTrayMenu();
 }
@@ -526,7 +714,7 @@ async function adoptStarterPet(petId: string) {
   const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
   if (!loaded.ok) throw new Error(loaded.issues.map((item) => item.message).join("\n"));
 
-  activePet = loaded.pet;
+  setDefaultPet(loaded.pet);
   const { petPath: _petPath, ...nextConfig } = config;
   config = { ...nextConfig, hidden: false, onboarding: createOnboardingState("completed") };
   await saveConfig(config);
@@ -536,7 +724,7 @@ async function adoptStarterPet(petId: string) {
   return {
     ok: true,
     pet: await getStarterPetSummary(petId),
-    message: `${activePet.displayName || activePet.id} is now your active pet.`,
+    message: `${loaded.pet.displayName || loaded.pet.id} is now your active pet.`,
     onboarding: getOnboardingSnapshot(),
   };
 }
@@ -569,8 +757,8 @@ async function applyArgv(argv: string[]) {
   if (petPath) {
     const loaded = await loadCodexPetDirectory(resolve(petPath));
     if (loaded.ok) {
-      activePet = loaded.pet;
-      config = { ...config, petPath: activePet.directory };
+      setDefaultPet(loaded.pet);
+      config = { ...config, petPath: loaded.pet.directory };
       await saveConfig(config);
     } else {
       console.error(loaded.issues.map((item) => item.message).join("\n"));
@@ -578,7 +766,7 @@ async function applyArgv(argv: string[]) {
   } else if (config.petPath) {
     const loaded = await loadCodexPetDirectory(config.petPath);
     if (loaded.ok) {
-      activePet = loaded.pet;
+      setDefaultPet(loaded.pet);
     } else {
       console.error(loaded.issues.map((item) => item.message).join("\n"));
       await loadDefaultPet();
@@ -634,8 +822,8 @@ async function choosePetDirectory() {
     return;
   }
 
-  activePet = loaded.pet;
-  config = { ...config, petPath: activePet.directory };
+  setDefaultPet(loaded.pet);
+  config = { ...config, petPath: loaded.pet.directory };
   await saveConfig(config);
   installedPets = await loadInstalledPets();
   publishState();
@@ -647,17 +835,17 @@ async function selectPet(params: { path: string }) {
     throw new Error(loaded.issues.map((item) => item.message).join("\n"));
   }
 
-  activePet = loaded.pet;
-  config = { ...config, petPath: activePet.directory, hidden: false };
+  setDefaultPet(loaded.pet);
+  config = { ...config, petPath: loaded.pet.directory, hidden: false };
   await saveConfig(config);
   installedPets = await loadInstalledPets();
   showPetWindow("select-pet");
   publishState();
   return {
     pet: {
-      id: activePet.id,
-      displayName: activePet.displayName,
-      directory: activePet.directory,
+      id: loaded.pet.id,
+      displayName: loaded.pet.displayName,
+      directory: loaded.pet.directory,
     },
   };
 }
@@ -687,7 +875,7 @@ async function loadInstalledPets() {
 async function useDefaultPet() {
   const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
   if (!loaded.ok) return;
-  activePet = loaded.pet;
+  setDefaultPet(loaded.pet);
   const { petPath: _petPath, ...nextConfig } = config;
   config = nextConfig;
   await saveConfig(config);
@@ -797,8 +985,10 @@ function isWindowAction(action: unknown): action is "show" | "hide" | "sleep" | 
   return action === "show" || action === "hide" || action === "sleep" || action === "quit";
 }
 
-function handlePetInteraction(interaction: unknown) {
-  if (!mainWindow || !interaction || typeof interaction !== "object") return;
+function handlePetInteraction(sender: WebContents, interaction: unknown) {
+  const instance = getInstanceByWebContents(sender);
+  const window = instance?.window;
+  if (!window || !interaction || typeof interaction !== "object") return;
   const record = interaction as Record<string, unknown>;
   const type = record.type;
   const screenX = typeof record.screenX === "number" ? record.screenX : 0;
@@ -811,8 +1001,9 @@ function handlePetInteraction(interaction: unknown) {
 
   if (type === "drag-start") {
     dragState = {
+      window,
       startCursor: { x: screenX, y: screenY },
-      startBounds: mainWindow.getBounds(),
+      startBounds: window.getBounds(),
     };
     return;
   }
@@ -820,21 +1011,22 @@ function handlePetInteraction(interaction: unknown) {
   if (type === "drag-move" && dragState) {
     const nextX = Math.round(dragState.startBounds.x + screenX - dragState.startCursor.x);
     const nextY = Math.round(dragState.startBounds.y + screenY - dragState.startCursor.y);
-    const currentBounds = mainWindow.getBounds();
+    const currentBounds = dragState.window.getBounds();
     if (currentBounds.x === nextX && currentBounds.y === nextY) return;
-    mainWindow.setPosition(nextX, nextY, false);
+    dragState.window.setPosition(nextX, nextY, false);
     return;
   }
 
   if (type === "drag-end") {
+    const draggedWindow = dragState?.window;
     dragState = null;
-    void saveWindowPosition();
+    void saveWindowPosition(draggedWindow);
   }
 }
 
-async function saveWindowPosition() {
+async function saveWindowPosition(window = mainWindow) {
   if (dragState) return;
-  const bounds = mainWindow?.getBounds();
+  const bounds = window?.getBounds();
   if (!bounds) return;
   config = { ...config, position: { x: bounds.x, y: bounds.y } };
   await saveConfig(config);
@@ -855,17 +1047,17 @@ async function saveConfig(nextConfig: OpenPetsConfig) {
   await writeFile(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`);
 }
 
-function scheduleExpiration() {
-  if (expirationTimer) {
-    clearTimeout(expirationTimer);
-    expirationTimer = null;
+function scheduleExpirationForInstance(instance: PetInstance) {
+  if (instance.expirationTimer) {
+    clearTimeout(instance.expirationTimer);
+    instance.expirationTimer = null;
   }
-  if (runtimeState.temporaryUntil === null) return;
-  const delay = Math.max(0, runtimeState.temporaryUntil - Date.now());
-  expirationTimer = setTimeout(() => {
-    runtimeState = tickPetState(runtimeState);
-    publishState();
-    scheduleExpiration();
+  if (instance.runtime.temporaryUntil === null) return;
+  const delay = Math.max(0, instance.runtime.temporaryUntil - Date.now());
+  instance.expirationTimer = setTimeout(() => {
+    instance.runtime = tickPetState(instance.runtime);
+    publishStateForInstance(instance);
+    scheduleExpirationForInstance(instance);
   }, delay + 5);
 }
 
@@ -873,6 +1065,7 @@ async function loadDefaultPet() {
   const loaded = await loadCodexPetDirectory(getBundledDefaultPetPath());
   if (loaded.ok) {
     activePet = loaded.pet;
+    defaultPet = loaded.pet;
   } else {
     console.error(loaded.issues.map((item) => item.message).join("\n"));
   }
@@ -913,22 +1106,22 @@ function clampWindowPosition(position: { x: number; y: number }, size: { width: 
   };
 }
 
-function resizeWindowForCurrentScale() {
-  if (!mainWindow) return;
+function resizeWindowForCurrentScale(window = mainWindow) {
+  if (!window) return;
   const size = getWindowContentSize();
-  const [currentWidth, currentHeight] = mainWindow.getContentSize();
+  const [currentWidth, currentHeight] = window.getContentSize();
   if (currentWidth === size.width && currentHeight === size.height) return;
 
-  const oldBounds = mainWindow.getBounds();
+  const oldBounds = window.getBounds();
   const anchorX = oldBounds.x + oldBounds.width;
   const anchorY = oldBounds.y + oldBounds.height;
-  mainWindow.setContentSize(size.width, size.height, false);
+  window.setContentSize(size.width, size.height, false);
 
-  const newBounds = mainWindow.getBounds();
+  const newBounds = window.getBounds();
   const { workArea } = screen.getDisplayMatching(oldBounds);
   const nextX = clamp(anchorX - newBounds.width, workArea.x, workArea.x + workArea.width - newBounds.width);
   const nextY = clamp(anchorY - newBounds.height, workArea.y, workArea.y + workArea.height - newBounds.height);
-  mainWindow.setPosition(nextX, nextY, false);
+  window.setPosition(nextX, nextY, false);
 }
 
 function clamp(value: number, min: number, max: number) {

@@ -7,6 +7,8 @@ export type RendererPetState = {
   event?: OpenPetsEvent;
   activePet: (LoadedCodexPet & { spritesheetUrl: string }) | null;
   scale?: number;
+  agentType?: string;
+  detail?: string;
 };
 
 const api = {

@@ -121,6 +121,18 @@ describe("OpenPets MCP tools", () => {
     expect(events[0]).toMatchObject({ state: "testing", source: "mcp", type: "mcp.state.testing" });
   });
 
+  test("set_state acquires and sends lease id when called before start", async () => {
+    const events: unknown[] = [];
+    const leaseActions: string[] = [];
+    const client = fakeClient({ events, leaseActions });
+    const manager = createMcpLeaseManager(client, { leaseId: "mcp:test-session" });
+
+    await openPetsSetStateTool(client, "testing", manager);
+
+    expect(leaseActions).toContain("acquire");
+    expect(events[0]).toMatchObject({ state: "testing", source: "mcp:test-session", leaseId: "mcp:test-session" });
+  });
+
   test("set_state rejects invalid states", async () => {
     const result = await openPetsSetStateTool(fakeClient({}), "nope");
     expect(result.isError).toBe(true);
@@ -292,6 +304,7 @@ function validHealth(overrides: Partial<OpenPetsHealthV2> = {}): OpenPetsHealthV
     capabilities: ["event-v2", "window-v1", "lease-v1"],
     ready: overrides.ready ?? true,
     activePet: "slayer",
+    activePets: [{ leaseId: "__default__", agentType: "default", detail: "", petName: "slayer", state: "idle" }],
     activeLeases: 0,
     managed: false,
     ...overrides,
